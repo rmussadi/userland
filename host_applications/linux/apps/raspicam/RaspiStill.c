@@ -80,7 +80,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // TODO
 //#include "libgps_loader.h"
 
-#include "RaspiGPS.h"
+//#include "RaspiGPS.h"
 
 #include <semaphore.h>
 #include <math.h>
@@ -1197,176 +1197,6 @@ static MMAL_STATUS_T add_exif_tag(RASPISTILL_STATE *state, const char *exif_tag)
 }
 
 /**
- * Add a basic set of EXIF tags to the capture
- * Make, Time etc
- *
- * @param state Pointer to state control struct
- *
- */
-static void add_exif_tags(RASPISTILL_STATE *state, struct gps_data_t *gpsdata)
-{
-   time_t rawtime;
-   struct tm *timeinfo;
-   char model_buf[32];
-   char time_buf[32];
-   char exif_buf[128];
-   int i;
-
-   snprintf(model_buf, 32, "IFD0.Model=RP_%s", state->common_settings.camera_name);
-   add_exif_tag(state, model_buf);
-   add_exif_tag(state, "IFD0.Make=RaspberryPi");
-
-   time(&rawtime);
-   timeinfo = localtime(&rawtime);
-
-   snprintf(time_buf, sizeof(time_buf),
-            "%04d:%02d:%02d %02d:%02d:%02d",
-            timeinfo->tm_year+1900,
-            timeinfo->tm_mon+1,
-            timeinfo->tm_mday,
-            timeinfo->tm_hour,
-            timeinfo->tm_min,
-            timeinfo->tm_sec);
-
-   snprintf(exif_buf, sizeof(exif_buf), "EXIF.DateTimeDigitized=%s", time_buf);
-   add_exif_tag(state, exif_buf);
-
-   snprintf(exif_buf, sizeof(exif_buf), "EXIF.DateTimeOriginal=%s", time_buf);
-   add_exif_tag(state, exif_buf);
-
-   snprintf(exif_buf, sizeof(exif_buf), "IFD0.DateTime=%s", time_buf);
-   add_exif_tag(state, exif_buf);
-
-
-   // Add GPS tags
-   if (state->common_settings.gps)
-   {
-      // clear all existing tags first
-      add_exif_tag(state, "GPS.GPSDateStamp=");
-      add_exif_tag(state, "GPS.GPSTimeStamp=");
-      add_exif_tag(state, "GPS.GPSMeasureMode=");
-      add_exif_tag(state, "GPS.GPSSatellites=");
-      add_exif_tag(state, "GPS.GPSLatitude=");
-      add_exif_tag(state, "GPS.GPSLatitudeRef=");
-      add_exif_tag(state, "GPS.GPSLongitude=");
-      add_exif_tag(state, "GPS.GPSLongitudeRef=");
-      add_exif_tag(state, "GPS.GPSAltitude=");
-      add_exif_tag(state, "GPS.GPSAltitudeRef=");
-      add_exif_tag(state, "GPS.GPSSpeed=");
-      add_exif_tag(state, "GPS.GPSSpeedRef=");
-      add_exif_tag(state, "GPS.GPSTrack=");
-      add_exif_tag(state, "GPS.GPSTrackRef=");
-
-      if (gpsdata->online)
-      {
-         if (state->common_settings.verbose)
-            fprintf(stderr, "Adding GPS EXIF\n");
-         if (gpsdata->set & TIME_SET)
-         {
-            rawtime = gpsdata->fix.time;
-            timeinfo = localtime(&rawtime);
-            strftime(time_buf, sizeof(time_buf), "%Y:%m:%d", timeinfo);
-            snprintf(exif_buf, sizeof(exif_buf), "GPS.GPSDateStamp=%s", time_buf);
-            add_exif_tag(state, exif_buf);
-            strftime(time_buf, sizeof(time_buf), "%H/1,%M/1,%S/1", timeinfo);
-            snprintf(exif_buf, sizeof(exif_buf), "GPS.GPSTimeStamp=%s", time_buf);
-            add_exif_tag(state, exif_buf);
-         }
-         if (gpsdata->fix.mode >= MODE_2D)
-         {
-            snprintf(exif_buf, sizeof(exif_buf), "GPS.GPSMeasureMode=%c",
-                     (gpsdata->fix.mode >= MODE_3D) ? '3' : '2');
-            add_exif_tag(state, exif_buf);
-            if ((gpsdata->satellites_used > 0) && (gpsdata->satellites_visible > 0))
-            {
-               snprintf(exif_buf, sizeof(exif_buf), "GPS.GPSSatellites=Used:%d,Visible:%d",
-                        gpsdata->satellites_used, gpsdata->satellites_visible);
-               add_exif_tag(state, exif_buf);
-            }
-            else if (gpsdata->satellites_used > 0)
-            {
-               snprintf(exif_buf, sizeof(exif_buf), "GPS.GPSSatellites=Used:%d",
-                        gpsdata->satellites_used);
-               add_exif_tag(state, exif_buf);
-            }
-            else if (gpsdata->satellites_visible > 0)
-            {
-               snprintf(exif_buf, sizeof(exif_buf), "GPS.GPSSatellites=Visible:%d",
-                        gpsdata->satellites_visible);
-               add_exif_tag(state, exif_buf);
-            }
-
-            if (gpsdata->set & LATLON_SET)
-            {
-               if (isnan(gpsdata->fix.latitude) == 0)
-               {
-                  if (deg_to_str(fabs(gpsdata->fix.latitude), time_buf, sizeof(time_buf)) == 0)
-                  {
-                     snprintf(exif_buf, sizeof(exif_buf), "GPS.GPSLatitude=%s", time_buf);
-                     add_exif_tag(state, exif_buf);
-                     snprintf(exif_buf, sizeof(exif_buf), "GPS.GPSLatitudeRef=%c",
-                              (gpsdata->fix.latitude < 0) ? 'S' : 'N');
-                     add_exif_tag(state, exif_buf);
-                  }
-               }
-               if (isnan(gpsdata->fix.longitude) == 0)
-               {
-                  if (deg_to_str(fabs(gpsdata->fix.longitude), time_buf, sizeof(time_buf)) == 0)
-                  {
-                     snprintf(exif_buf, sizeof(exif_buf), "GPS.GPSLongitude=%s", time_buf);
-                     add_exif_tag(state, exif_buf);
-                     snprintf(exif_buf, sizeof(exif_buf), "GPS.GPSLongitudeRef=%c",
-                              (gpsdata->fix.longitude < 0) ? 'W' : 'E');
-                     add_exif_tag(state, exif_buf);
-                  }
-               }
-            }
-            if ((gpsdata->set & ALTITUDE_SET) && (gpsdata->fix.mode >= MODE_3D))
-            {
-               if (isnan(gpsdata->fix.altitude) == 0)
-               {
-                  snprintf(exif_buf, sizeof(exif_buf), "GPS.GPSAltitude=%d/10",
-                           (int)(gpsdata->fix.altitude*10+0.5));
-                  add_exif_tag(state, exif_buf);
-                  add_exif_tag(state, "GPS.GPSAltitudeRef=0");
-               }
-            }
-            if (gpsdata->set & SPEED_SET)
-            {
-               if (isnan(gpsdata->fix.speed) == 0)
-               {
-                  snprintf(exif_buf, sizeof(exif_buf), "GPS.GPSSpeed=%d/10",
-                           (int)(gpsdata->fix.speed*MPS_TO_KPH*10+0.5));
-                  add_exif_tag(state, exif_buf);
-                  add_exif_tag(state, "GPS.GPSSpeedRef=K");
-               }
-            }
-            if (gpsdata->set & TRACK_SET)
-            {
-               if (isnan(gpsdata->fix.track) == 0)
-               {
-                  snprintf(exif_buf, sizeof(exif_buf), "GPS.GPSTrack=%d/100",
-                           (int)(gpsdata->fix.track*100+0.5));
-                  add_exif_tag(state, exif_buf);
-                  add_exif_tag(state, "GPS.GPSTrackRef=T");
-               }
-            }
-         }
-      }
-   }
-
-   // Now send any user supplied tags
-
-   for (i=0; i<state->numExifTags && i < MAX_USER_EXIF_TAGS; i++)
-   {
-      if (state->exifTags[i])
-      {
-         add_exif_tag(state, state->exifTags[i]);
-      }
-   }
-}
-
-/**
  * Stores an EXIF tag in the state, incrementing various pointers as necessary.
  * Any tags stored in this way will be added to the image file when add_exif_tags
  * is called
@@ -1688,12 +1518,6 @@ int main(int argc, const char **argv)
       dump_status(&state);
    }
 
-   if (state.common_settings.gps)
-   {
-      if (raspi_gps_setup(state.common_settings.verbose))
-         state.common_settings.gps = false;
-   }
-
    if (state.useGL)
       raspitex_init(&state.raspitex_state);
 
@@ -1877,9 +1701,6 @@ int main(int argc, const char **argv)
                   // once enabled no further exif data is accepted
                   if ( state.enableExifTags )
                   {
-                     struct gps_data_t *gps_data = raspi_gps_lock();
-                     add_exif_tags(&state, gps_data);
-                     raspi_gps_unlock();
                   }
                   else
                   {
@@ -1931,21 +1752,6 @@ int main(int argc, const char **argv)
 
                   if(state.camera_parameters.enable_annotate)
                   {
-                     if ((state.camera_parameters.enable_annotate & ANNOTATE_APP_TEXT) && state.common_settings.gps)
-                     {
-                        char *text = raspi_gps_location_string();
-                        raspicamcontrol_set_annotate(state.camera_component, state.camera_parameters.enable_annotate,
-                                                     text,
-                                                     state.camera_parameters.annotate_text_size,
-                                                     state.camera_parameters.annotate_text_colour,
-                                                     state.camera_parameters.annotate_bg_colour,
-                                                     state.camera_parameters.annotate_justify,
-                                                     state.camera_parameters.annotate_x,
-                                                     state.camera_parameters.annotate_y
-                                                    );
-                        free(text);
-                     }
-                     else
                         raspicamcontrol_set_annotate(state.camera_component, state.camera_parameters.enable_annotate,
                                                      state.camera_parameters.annotate_string,
                                                      state.camera_parameters.annotate_text_size,
@@ -2049,9 +1855,6 @@ error:
 
       if (state.common_settings.verbose)
          fprintf(stderr, "Close down completed, all components disconnected, disabled and destroyed\n\n");
-
-      if (state.common_settings.gps)
-         raspi_gps_shutdown(state.common_settings.verbose);
    }
 
    if (status != MMAL_SUCCESS)
