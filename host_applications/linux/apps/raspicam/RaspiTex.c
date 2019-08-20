@@ -579,12 +579,6 @@ int raspitex_init(RASPITEX_STATE *state)
    case RASPITEX_SCENE_SQUARE:
       rc = square_open(state);
       break;
-   case RASPITEX_SCENE_MIRROR:
-      rc = mirror_open(state);
-      break;
-   case RASPITEX_SCENE_TEAPOT:
-      rc = teapot_open(state);
-      break;
    case RASPITEX_SCENE_YUV:
       rc = yuv_open(state);
       break;
