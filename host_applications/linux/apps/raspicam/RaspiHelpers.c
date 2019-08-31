@@ -42,7 +42,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "interface/mmal/util/mmal_connection.h"
 
 #include "RaspiCLI.h"
-#include "RaspiPreview.h"
 #include "RaspiCamControl.h"
 #include "RaspiCommonSettings.h"
 
@@ -76,9 +75,6 @@ void display_valid_parameters(char *name, void (*app_help)(char*))
 
    // general settings
    raspicommonsettings_display_help();
-
-   // Help for preview options
-   raspipreview_display_help();
 
    // Now display any help information from the camcontrol code
    raspicamcontrol_display_help();
