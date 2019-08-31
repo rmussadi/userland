@@ -72,14 +72,15 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "RaspiCommonSettings.h"
 #include "RaspiCamControl.h"
+#include "RaspiPreview.h"
 #include "RaspiCLI.h"
 #include "RaspiTex.h"
 #include "RaspiHelpers.h"
 
-#define FULL_RES_PREVIEW_FRAME_RATE_NUM 0
-#define FULL_RES_PREVIEW_FRAME_RATE_DEN 1
-#define PREVIEW_FRAME_RATE_NUM 0
-#define PREVIEW_FRAME_RATE_DEN 1
+// TODO
+//#include "libgps_loader.h"
+
+//#include "RaspiGPS.h"
 
 #include <semaphore.h>
 #include <math.h>
@@ -99,6 +100,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /// Video render needs at least 2 buffers.
 #define VIDEO_OUTPUT_BUFFERS_NUM 3
 
+#define MAX_USER_EXIF_TAGS      32
+#define MAX_EXIF_PAYLOAD_LENGTH 128
 
 /// Frame advance method
 enum
@@ -130,6 +133,9 @@ typedef struct
    int demoMode;                       /// Run app in demo mode
    int demoInterval;                   /// Interval between camera settings changes
    MMAL_FOURCC_T encoding;             /// Encoding to use for the output file.
+   const char *exifTags[MAX_USER_EXIF_TAGS]; /// Array of pointers to tags supplied from the command line
+   int numExifTags;                    /// Number of supplied tags
+   int enableExifTags;                 /// Enable/Disable EXIF tags in output
    int timelapse;                      /// Delay between each picture in timelapse mode. If 0, disable timelapse
    int fullResPreview;                 /// If set, the camera preview port runs at capture resolution. Reduces fps.
    int frameNextMethod;                /// Which method to use to advance to next frame
@@ -140,6 +146,7 @@ typedef struct
    int timestamp;                      /// Use timestamp instead of frame#
    int restart_interval;               /// JPEG restart interval. 0 for none.
 
+   RASPIPREVIEW_PARAMETERS preview_parameters;    /// Preview setup parameters
    RASPICAM_CAMERA_PARAMETERS camera_parameters; /// Camera setup parameters
 
    MMAL_COMPONENT_T *camera_component;    /// Pointer to the camera component
@@ -163,6 +170,7 @@ typedef struct
    RASPISTILL_STATE *pstate;            /// pointer to our state in case required in callback
 } PORT_USERDATA;
 
+static void store_exif_tag(RASPISTILL_STATE *state, const char *exif_tag);
 
 /// Command ID's and Structure defining our command line options
 enum
@@ -173,6 +181,7 @@ enum
    CommandThumbnail,
    CommandDemoMode,
    CommandEncoding,
+   CommandExifTag,
    CommandTimelapse,
    CommandFullResPreview,
    CommandLink,
@@ -196,6 +205,7 @@ static COMMAND_LIST cmdline_commands[] =
    { CommandThumbnail,"-thumb",     "th", "Set thumbnail parameters (x:y:quality) or none", 1},
    { CommandDemoMode,"-demo",       "d",  "Run a demo mode (cycle through range of camera options, no capture)", 0},
    { CommandEncoding,"-encoding",   "e",  "Encoding to use for output file (jpg, bmp, gif, png)", 1},
+   { CommandExifTag, "-exif",       "x",  "EXIF tag to apply to captures (format as 'key=value') or none", 1},
    { CommandTimelapse,"-timelapse", "tl", "Timelapse mode. Takes a picture every <t>ms. %d == frame number (Try: -o img_%04d.jpg)", 1},
    { CommandFullResPreview,"-fullpreview","fp", "Run the preview using the still capture resolution (may reduce preview fps)", 0},
    { CommandKeypress,"-keypress",   "k",  "Wait between captures for a ENTER, X then ENTER to exit", 0},
@@ -279,6 +289,8 @@ static void default_status(RASPISTILL_STATE *state)
    state->encoder_connection = NULL;
    state->encoder_pool = NULL;
    state->encoding = MMAL_ENCODING_JPEG;
+   state->numExifTags = 0;
+   state->enableExifTags = 1;
    state->timelapse = 0;
    state->fullResPreview = 0;
    state->frameNextMethod = FRAME_NEXT_SINGLE;
@@ -288,6 +300,9 @@ static void default_status(RASPISTILL_STATE *state)
    state->datetime = 0;
    state->timestamp = 0;
    state->restart_interval = 0;
+
+   // Setup preview window defaults
+   raspipreview_set_defaults(&state->preview_parameters);
 
    // Set up the camera_parameters to default
    raspicamcontrol_set_defaults(&state->camera_parameters);
@@ -338,6 +353,25 @@ static void dump_status(RASPISTILL_STATE *state)
    }
    fprintf(stderr, "\n\n");
 
+   if (state->enableExifTags)
+   {
+      if (state->numExifTags)
+      {
+         fprintf(stderr, "User supplied EXIF tags :\n");
+
+         for (i=0; i<state->numExifTags; i++)
+         {
+            fprintf(stderr, "%s", state->exifTags[i]);
+            if (i != state->numExifTags-1)
+               fprintf(stderr, ",");
+         }
+         fprintf(stderr, "\n\n");
+      }
+   }
+   else
+      fprintf(stderr, "EXIF tags disabled\n");
+
+   raspipreview_dump_parameters(&state->preview_parameters);
    raspicamcontrol_dump_parameters(&state->camera_parameters);
 }
 
@@ -530,6 +564,18 @@ static int parse_cmdline(int argc, const char **argv, RASPISTILL_STATE *state)
          break;
       }
 
+      case CommandExifTag:
+         if ( strcmp( argv[ i + 1 ], "none" ) == 0 )
+         {
+            state->enableExifTags = 0;
+         }
+         else
+         {
+            store_exif_tag(state, argv[i+1]);
+         }
+         i++;
+         break;
+
       case CommandTimelapse:
          if (sscanf(argv[i + 1], "%u", &state->timelapse) != 1)
             valid = 0;
@@ -602,6 +648,9 @@ static int parse_cmdline(int argc, const char **argv, RASPISTILL_STATE *state)
          if (!parms_used)
             parms_used = raspicommonsettings_parse_cmdline(&state->common_settings, &argv[i][1], second_arg, &application_help_message);
 
+         // Still unused, try preview settings
+         if (!parms_used)
+            parms_used = raspipreview_parse_cmdline(&state->preview_parameters, &argv[i][1], second_arg);
 
          // Still unused, try GL preview options
          if (!parms_used)
@@ -618,13 +667,21 @@ static int parse_cmdline(int argc, const char **argv, RASPISTILL_STATE *state)
       }
    }
 
+   /* GL preview parameters use preview parameters as defaults unless overriden */
+   if (! state->raspitex_state.gl_win_defined)
+   {
+      state->raspitex_state.x       = state->preview_parameters.previewWindow.x;
+      state->raspitex_state.y       = state->preview_parameters.previewWindow.y;
+      state->raspitex_state.width   = state->preview_parameters.previewWindow.width;
+      state->raspitex_state.height  = state->preview_parameters.previewWindow.height;
+   }
    /* Also pass the preview information through so GL renderer can determine
     * the real resolution of the multi-media image */
-   state->raspitex_state.preview_x       = state->raspitex_state.x;
-   state->raspitex_state.preview_y       = state->raspitex_state.y;
-   state->raspitex_state.preview_width   = state->raspitex_state.width;
-   state->raspitex_state.preview_height  = state->raspitex_state.height;
-   state->raspitex_state.opacity         = 255;
+   state->raspitex_state.preview_x       = state->preview_parameters.previewWindow.x;
+   state->raspitex_state.preview_y       = state->preview_parameters.previewWindow.y;
+   state->raspitex_state.preview_width   = state->preview_parameters.previewWindow.width;
+   state->raspitex_state.preview_height  = state->preview_parameters.previewWindow.height;
+   state->raspitex_state.opacity         = state->preview_parameters.opacity;
    state->raspitex_state.verbose         = state->common_settings.verbose;
 
    if (!valid)
@@ -787,8 +844,8 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
          .max_stills_h = state->common_settings.height,
          .stills_yuv422 = 0,
          .one_shot_stills = 1,
-         .max_preview_video_w = state->raspitex_state.preview_width,
-         .max_preview_video_h = state->raspitex_state.preview_height,
+         .max_preview_video_w = state->preview_parameters.previewWindow.width,
+         .max_preview_video_h = state->preview_parameters.previewWindow.height,
          .num_preview_video_frames = 3,
          .stills_capture_circular_buffer_height = 0,
          .fast_preview_resume = 0,
@@ -842,12 +899,12 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
    else
    {
       // Use a full FOV 4:3 mode
-      format->es->video.width = VCOS_ALIGN_UP(state->raspitex_state.preview_width, 32);
-      format->es->video.height = VCOS_ALIGN_UP(state->raspitex_state.preview_height, 16);
+      format->es->video.width = VCOS_ALIGN_UP(state->preview_parameters.previewWindow.width, 32);
+      format->es->video.height = VCOS_ALIGN_UP(state->preview_parameters.previewWindow.height, 16);
       format->es->video.crop.x = 0;
       format->es->video.crop.y = 0;
-      format->es->video.crop.width = state->raspitex_state.preview_width;
-      format->es->video.crop.height = state->raspitex_state.preview_height;
+      format->es->video.crop.width = state->preview_parameters.previewWindow.width;
+      format->es->video.crop.height = state->preview_parameters.previewWindow.height;
       format->es->video.frame_rate.num = PREVIEW_FRAME_RATE_NUM;
       format->es->video.frame_rate.den = PREVIEW_FRAME_RATE_DEN;
    }
@@ -1106,6 +1163,58 @@ static void destroy_encoder_component(RASPISTILL_STATE *state)
    }
 }
 
+
+/**
+ * Add an exif tag to the capture
+ *
+ * @param state Pointer to state control struct
+ * @param exif_tag String containing a "key=value" pair.
+ * @return  Returns a MMAL_STATUS_T giving result of operation
+ */
+static MMAL_STATUS_T add_exif_tag(RASPISTILL_STATE *state, const char *exif_tag)
+{
+   MMAL_STATUS_T status;
+   MMAL_PARAMETER_EXIF_T *exif_param = (MMAL_PARAMETER_EXIF_T*)calloc(sizeof(MMAL_PARAMETER_EXIF_T) + MAX_EXIF_PAYLOAD_LENGTH, 1);
+
+   vcos_assert(state);
+   vcos_assert(state->encoder_component);
+
+   // Check to see if the tag is present or is indeed a key=value pair.
+   if (!exif_tag || strchr(exif_tag, '=') == NULL || strlen(exif_tag) > MAX_EXIF_PAYLOAD_LENGTH-1)
+      return MMAL_EINVAL;
+
+   exif_param->hdr.id = MMAL_PARAMETER_EXIF;
+
+   strncpy((char*)exif_param->data, exif_tag, MAX_EXIF_PAYLOAD_LENGTH-1);
+
+   exif_param->hdr.size = sizeof(MMAL_PARAMETER_EXIF_T) + strlen((char*)exif_param->data);
+
+   status = mmal_port_parameter_set(state->encoder_component->output[0], &exif_param->hdr);
+
+   free(exif_param);
+
+   return status;
+}
+
+/**
+ * Stores an EXIF tag in the state, incrementing various pointers as necessary.
+ * Any tags stored in this way will be added to the image file when add_exif_tags
+ * is called
+ *
+ * Will not store if run out of storage space
+ *
+ * @param state Pointer to state control struct
+ * @param exif_tag EXIF tag string
+ *
+ */
+static void store_exif_tag(RASPISTILL_STATE *state, const char *exif_tag)
+{
+   if (state->numExifTags < MAX_USER_EXIF_TAGS)
+   {
+      state->exifTags[state->numExifTags] = exif_tag;
+      state->numExifTags++;
+   }
+}
 
 /**
  * Allocates and generates a filename based on the
@@ -1409,7 +1518,8 @@ int main(int argc, const char **argv)
       dump_status(&state);
    }
 
-   raspitex_init(&state.raspitex_state);
+   if (state.useGL)
+      raspitex_init(&state.raspitex_state);
 
    // OK, we have a nice set of parameters. Now set up our components
    // We have three components. Camera, Preview and encoder.
@@ -1421,9 +1531,16 @@ int main(int argc, const char **argv)
       vcos_log_error("%s: Failed to create camera component", __func__);
       exit_code = EX_SOFTWARE;
    }
+   else if ((!state.useGL) && (status = raspipreview_create(&state.preview_parameters)) != MMAL_SUCCESS)
+   {
+      vcos_log_error("%s: Failed to create preview component", __func__);
+      destroy_camera_component(&state);
+      exit_code = EX_SOFTWARE;
+   }
    else if ((status = create_encoder_component(&state)) != MMAL_SUCCESS)
    {
       vcos_log_error("%s: Failed to create encode component", __func__);
+      raspipreview_destroy(&state.preview_parameters);
       destroy_camera_component(&state);
       exit_code = EX_SOFTWARE;
    }
@@ -1440,6 +1557,18 @@ int main(int argc, const char **argv)
       encoder_input_port  = state.encoder_component->input[0];
       encoder_output_port = state.encoder_component->output[0];
 
+      if (! state.useGL)
+      {
+         if (state.common_settings.verbose)
+            fprintf(stderr, "Connecting camera preview port to video render.\n");
+
+         // Note we are lucky that the preview and null sink components use the same input port
+         // so we can simple do this without conditionals
+         preview_input_port  = state.preview_parameters.preview_component->input[0];
+
+         // Connect camera to preview (which might be a null_sink if no preview required)
+         status = connect_ports(camera_preview_port, preview_input_port, &state.preview_connection);
+      }
 
       if (status == MMAL_SUCCESS)
       {
@@ -1570,8 +1699,14 @@ int main(int argc, const char **argv)
 
                   // Must do this before the encoder output port is enabled since
                   // once enabled no further exif data is accepted
+                  if ( state.enableExifTags )
+                  {
+                  }
+                  else
+                  {
                      mmal_port_parameter_set_boolean(
                         state.encoder_component->output[0], MMAL_PARAMETER_EXIF_DISABLE, 1);
+                  }
 
                   // Same with raw, apparently need to set it for each capture, whilst port
                   // is not enabled
@@ -1708,10 +1843,14 @@ error:
       if (state.encoder_component)
          mmal_component_disable(state.encoder_component);
 
+      if (state.preview_parameters.preview_component)
+         mmal_component_disable(state.preview_parameters.preview_component);
+
       if (state.camera_component)
          mmal_component_disable(state.camera_component);
 
       destroy_encoder_component(&state);
+      raspipreview_destroy(&state.preview_parameters);
       destroy_camera_component(&state);
 
       if (state.common_settings.verbose)
