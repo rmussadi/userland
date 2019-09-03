@@ -582,6 +582,9 @@ int raspitex_init(RASPITEX_STATE *state)
    case RASPITEX_SCENE_YUV:
       rc = yuv_open(state);
       break;
+   case RASPITEX_SCENE_VCSM_SQUARE:
+       rc = vcsm_square_open(state);
+       break;
    default:
       rc = -1;
       break;

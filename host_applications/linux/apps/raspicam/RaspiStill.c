@@ -739,48 +739,21 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
 
    /* Create the component */
    status = mmal_component_create(MMAL_COMPONENT_DEFAULT_CAMERA, &camera);
-
-   if (status != MMAL_SUCCESS)
-   {
-      vcos_log_error("Failed to create camera component");
-      goto error;
-   }
-
+   assert(status == MMAL_SUCCESS);
    status = raspicamcontrol_set_stereo_mode(camera->output[0], &state->camera_parameters.stereo_mode);
    status += raspicamcontrol_set_stereo_mode(camera->output[1], &state->camera_parameters.stereo_mode);
    status += raspicamcontrol_set_stereo_mode(camera->output[2], &state->camera_parameters.stereo_mode);
-
-   if (status != MMAL_SUCCESS)
-   {
-      vcos_log_error("Could not set stereo mode : error %d", status);
-      goto error;
-   }
+   assert (status == MMAL_SUCCESS);
 
    MMAL_PARAMETER_INT32_T camera_num =
-   {{MMAL_PARAMETER_CAMERA_NUM, sizeof(camera_num)}, state->common_settings.cameraNum};
+     {{MMAL_PARAMETER_CAMERA_NUM, sizeof(camera_num)}, state->common_settings.cameraNum};
 
    status = mmal_port_parameter_set(camera->control, &camera_num.hdr);
+   assert (status == MMAL_SUCCESS);  // vcos_log_error("Could not select camera : error %d", status);
 
-   if (status != MMAL_SUCCESS)
-   {
-      vcos_log_error("Could not select camera : error %d", status);
-      goto error;
-   }
-
-   if (!camera->output_num)
-   {
-      status = MMAL_ENOSYS;
-      vcos_log_error("Camera doesn't have output ports");
-      goto error;
-   }
-
+   assert (camera->output_num); //vcos_log_error("Camera doesn't have output ports");
    status = mmal_port_parameter_set_uint32(camera->control, MMAL_PARAMETER_CAMERA_CUSTOM_SENSOR_CONFIG, state->common_settings.sensor_mode);
-
-   if (status != MMAL_SUCCESS)
-   {
-      vcos_log_error("Could not set sensor mode : error %d", status);
-      goto error;
-   }
+   assert (status == MMAL_SUCCESS);//      vcos_log_error("Could not set sensor mode : error %d", status);
 
    preview_port = camera->output[MMAL_CAMERA_PREVIEW_PORT];
    video_port = camera->output[MMAL_CAMERA_VIDEO_PORT];
@@ -788,12 +761,7 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
 
    // Enable the camera, and tell it its control callback function
    status = mmal_port_enable(camera->control, default_camera_control_callback);
-
-   if (status != MMAL_SUCCESS)
-   {
-      vcos_log_error("Unable to enable control port : error %d", status);
-      goto error;
-   }
+   assert (status == MMAL_SUCCESS); //      vcos_log_error("Unable to enable control port : error %d", status);
 
    //  set up the camera configuration
    {
@@ -812,19 +780,16 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
          .use_stc_timestamp = MMAL_PARAM_TIMESTAMP_MODE_RESET_STC
       };
 
-      if (state->fullResPreview)
-      {
+      if (state->fullResPreview) {
          cam_config.max_preview_video_w = state->common_settings.width;
          cam_config.max_preview_video_h = state->common_settings.height;
       }
-
       mmal_port_parameter_set(camera->control, &cam_config.hdr);
    }
 
    raspicamcontrol_set_all_parameters(camera, &state->camera_parameters);
 
    // Now set up the port formats
-
    format = preview_port->format;
    format->encoding = MMAL_ENCODING_OPAQUE;
    format->encoding_variant = MMAL_ENCODING_I420;
@@ -993,31 +958,16 @@ static MMAL_STATUS_T create_encoder_component(RASPISTILL_STATE *state)
    MMAL_POOL_T *pool;
 
    status = mmal_component_create(MMAL_COMPONENT_DEFAULT_IMAGE_ENCODER, &encoder);
-
-   if (status != MMAL_SUCCESS)
-   {
-      vcos_log_error("Unable to create JPEG encoder component");
-      goto error;
-   }
-
-   if (!encoder->input_num || !encoder->output_num)
-   {
-      status = MMAL_ENOSYS;
-      vcos_log_error("JPEG encoder doesn't have input/output ports");
-      goto error;
-   }
-
+   assert(status == MMAL_SUCCESS);
+   assert( encoder->input_num && encoder->output_num); //vcos_log_error("JPEG encoder doesn't have input/output ports");
    encoder_input = encoder->input[0];
    encoder_output = encoder->output[0];
-
    // We want same format on input and output
    mmal_format_copy(encoder_output->format, encoder_input->format);
-
    // Specify out output format
    encoder_output->format->encoding = state->encoding;
 
    encoder_output->buffer_size = encoder_output->buffer_size_recommended;
-
    if (encoder_output->buffer_size < encoder_output->buffer_size_min)
       encoder_output->buffer_size = encoder_output->buffer_size_min;
 
@@ -1026,78 +976,26 @@ static MMAL_STATUS_T create_encoder_component(RASPISTILL_STATE *state)
    if (encoder_output->buffer_num < encoder_output->buffer_num_min)
       encoder_output->buffer_num = encoder_output->buffer_num_min;
 
-   // Commit the port changes to the output port
-   status = mmal_port_format_commit(encoder_output);
-
-   if (status != MMAL_SUCCESS)
-   {
-      vcos_log_error("Unable to set format on video encoder output port");
-      goto error;
-   }
-
-   // Set the JPEG quality level
+   status = mmal_port_format_commit(encoder_output);     // Commit the port changes to the output port
+   assert(status == MMAL_SUCCESS);
+      // Set the JPEG quality level
    status = mmal_port_parameter_set_uint32(encoder_output, MMAL_PARAMETER_JPEG_Q_FACTOR, state->quality);
-
-   if (status != MMAL_SUCCESS)
-   {
-      vcos_log_error("Unable to set JPEG quality");
-      goto error;
-   }
-
+   assert(status == MMAL_SUCCESS);
    // Set the JPEG restart interval
    status = mmal_port_parameter_set_uint32(encoder_output, MMAL_PARAMETER_JPEG_RESTART_INTERVAL, state->restart_interval);
-
-   if (state->restart_interval && status != MMAL_SUCCESS)
-   {
+   if (state->restart_interval && status != MMAL_SUCCESS) {
       vcos_log_error("Unable to set JPEG restart interval");
-      goto error;
+      assert(0);
    }
 
-   // Set up any required thumbnail
-   {
-      MMAL_PARAMETER_THUMBNAIL_CONFIG_T param_thumb = {{MMAL_PARAMETER_THUMBNAIL_CONFIGURATION, sizeof(MMAL_PARAMETER_THUMBNAIL_CONFIG_T)}, 0, 0, 0, 0};
-
-      if ( state->thumbnailConfig.enable &&
-            state->thumbnailConfig.width > 0 && state->thumbnailConfig.height > 0 )
-      {
-         // Have a valid thumbnail defined
-         param_thumb.enable = 1;
-         param_thumb.width = state->thumbnailConfig.width;
-         param_thumb.height = state->thumbnailConfig.height;
-         param_thumb.quality = state->thumbnailConfig.quality;
-      }
-      status = mmal_port_parameter_set(encoder->control, &param_thumb.hdr);
-   }
-
-   //  Enable component
-   status = mmal_component_enable(encoder);
-
-   if (status  != MMAL_SUCCESS)
-   {
-      vcos_log_error("Unable to enable video encoder component");
-      goto error;
-   }
+   status = mmal_component_enable(encoder);    //  Enable component
+   assert(status == MMAL_SUCCESS);
 
    /* Create pool of buffer headers for the output port to consume */
    pool = mmal_port_pool_create(encoder_output, encoder_output->buffer_num, encoder_output->buffer_size);
-
-   if (!pool)
-   {
-      vcos_log_error("Failed to create buffer header pool for encoder output port %s", encoder_output->name);
-   }
-
+   assert (pool);
    state->encoder_pool = pool;
    state->encoder_component = encoder;
-
-   if (state->common_settings.verbose)
-      fprintf(stderr, "Encoder component done\n");
-
-   return status;
-
-error:
-
-   if (encoder)
-      mmal_component_destroy(encoder);
 
    return status;
 }
@@ -1178,157 +1076,13 @@ static int wait_for_next_frame(RASPISTILL_STATE *state, int *frame)
    switch (state->frameNextMethod)
    {
    case FRAME_NEXT_SINGLE :
-      // simple timeout for a single capture
-      vcos_sleep(state->timeout);
+      vcos_sleep(state->timeout);  // simple timeout for a single capture
       return 0;
 
    case FRAME_NEXT_FOREVER :
-   {
       *frame+=1;
-
-      // Have a sleep so we don't hog the CPU.
-      vcos_sleep(10000);
-
-      // Run forever so never indicate end of loop
-      return 1;
-   }
-
-   case FRAME_NEXT_TIMELAPSE :
-   {
-      static int64_t next_frame_ms = -1;
-
-      // Always need to increment by at least one, may add a skip later
-      *frame += 1;
-
-      if (next_frame_ms == -1)
-      {
-         vcos_sleep(CAMERA_SETTLE_TIME);
-
-         // Update our current time after the sleep
-         current_time =  get_microseconds64()/1000;
-
-         // Set our initial 'next frame time'
-         next_frame_ms = current_time + state->timelapse;
-      }
-      else
-      {
-         int64_t this_delay_ms = next_frame_ms - current_time;
-
-         if (this_delay_ms < 0)
-         {
-            // We are already past the next exposure time
-            if (-this_delay_ms < state->timelapse/2)
-            {
-               // Less than a half frame late, take a frame and hope to catch up next time
-               next_frame_ms += state->timelapse;
-               vcos_log_error("Frame %d is %d ms late", *frame, (int)(-this_delay_ms));
-            }
-            else
-            {
-               int nskip = 1 + (-this_delay_ms)/state->timelapse;
-               vcos_log_error("Skipping frame %d to restart at frame %d", *frame, *frame+nskip);
-               *frame += nskip;
-               this_delay_ms += nskip * state->timelapse;
-               vcos_sleep(this_delay_ms);
-               next_frame_ms += (nskip + 1) * state->timelapse;
-            }
-         }
-         else
-         {
-            vcos_sleep(this_delay_ms);
-            next_frame_ms += state->timelapse;
-         }
-      }
-
-      return keep_running;
-   }
-
-   case FRAME_NEXT_KEYPRESS :
-   {
-      int ch;
-
-      if (state->common_settings.verbose)
-         fprintf(stderr, "Press Enter to capture, X then ENTER to exit\n");
-
-      ch = getchar();
-      *frame+=1;
-      if (ch == 'x' || ch == 'X')
-         return 0;
-      else
-      {
-         return keep_running;
-      }
-   }
-
-   case FRAME_NEXT_IMMEDIATELY :
-   {
-      // Not waiting, just go to next frame.
-      // Actually, we do need a slight delay here otherwise exposure goes
-      // badly wrong since we never allow it frames to work it out
-      // This could probably be tuned down.
-      // First frame has a much longer delay to ensure we get exposure to a steady state
-      if (*frame == 0)
-         vcos_sleep(CAMERA_SETTLE_TIME);
-      else
-         vcos_sleep(30);
-
-      *frame+=1;
-
-      return keep_running;
-   }
-
-   case FRAME_NEXT_GPIO :
-   {
-      // Intended for GPIO firing of a capture
-      return 0;
-   }
-
-   case FRAME_NEXT_SIGNAL :
-   {
-      // Need to wait for a SIGUSR1 or SIGUSR2 signal
-      sigset_t waitset;
-      int sig;
-      int result = 0;
-
-      sigemptyset( &waitset );
-      sigaddset( &waitset, SIGUSR1 );
-      sigaddset( &waitset, SIGUSR2 );
-
-      // We are multi threaded because we use mmal, so need to use the pthread
-      // variant of procmask to block until a SIGUSR1 or SIGUSR2 signal appears
-      pthread_sigmask( SIG_BLOCK, &waitset, NULL );
-
-      if (state->common_settings.verbose)
-      {
-         fprintf(stderr, "Waiting for SIGUSR1 to initiate capture and continue or SIGUSR2 to capture and exit\n");
-      }
-
-      result = sigwait( &waitset, &sig );
-
-      if (result == 0)
-      {
-         if (sig == SIGUSR1)
-         {
-            if (state->common_settings.verbose)
-               fprintf(stderr, "Received SIGUSR1\n");
-         }
-         else if (sig == SIGUSR2)
-         {
-            if (state->common_settings.verbose)
-               fprintf(stderr, "Received SIGUSR2\n");
-            keep_running = 0;
-         }
-      }
-      else
-      {
-         if (state->common_settings.verbose)
-            fprintf(stderr, "Bad signal received - error %d\n", errno);
-      }
-
-      *frame+=1;
-
-      return keep_running;
-   }
+      vcos_sleep(10000); // Have a sleep so we don't hog the CPU.
+      return 1;  // Run forever so never indicate end of loop
    } // end of switch
 
    // Should have returned by now, but default to timeout
@@ -1447,7 +1201,7 @@ int main(int argc, const char **argv)
    // vcos_status = vcos_semaphore_create(&callback_data.complete_semaphore, "RaspiStill-sem", 0);
    vcos_assert(vcos_semaphore_create(&callback_data.complete_semaphore, "RaspiStill-sem", 0) == VCOS_SUCCESS);
 
-   /* If GL preview is requested then start the GL threads */
+   // If GL preview is requested then start the GL threads
    if (state.useGL && (raspitex_start(&state.raspitex_state) != 0))
      goto error;
       
@@ -1495,8 +1249,7 @@ int main(int argc, const char **argv)
        }              
        // We only capture if a filename was specified and it opened
        if (state.useGL && state.glCapture && output_file) {
-           /* Save the next GL framebuffer as the next camera still */
-           int rc = raspitex_capture(&state.raspitex_state, output_file);
+           int rc = raspitex_capture(&state.raspitex_state, output_file); // Save the next GL framebuffer as the next camera still
            if (rc != 0)
                vcos_log_error("Failed to capture GL preview");
            rename_file(&state, output_file, final_filename, use_filename, frame);
