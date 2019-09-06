@@ -101,6 +101,27 @@ static RASPITEXUTIL_SHADER_PROGRAM_T vcsm_square_shader =
     .attribute_names = {"vertex"},
 };
 
+static RASPITEXUTIL_SHADER_PROGRAM_T line_shader =
+{
+    .vertex_source =
+   "attribute vec4 vertex; \n"
+   "void main() \n"
+   "{ \n"
+   " gl_Position = vertex; \n"
+    "} \n",
+    
+    .fragment_source =
+    "precision mediump float; \n"
+    "void main() \n"
+    "{ \n"
+    " gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); \n"
+    "}\n",
+    .uniform_names = {"tex"},
+    .attribute_names = {"vertex"},
+};
+
+    
+
 static GLfloat quad_varray[] = {
    -1.0f, -1.0f, 1.0f, 1.0f, 1.0f, -1.0f,
    -1.0f, 1.0f, 1.0f, 1.0f, -1.0f, -1.0f,
