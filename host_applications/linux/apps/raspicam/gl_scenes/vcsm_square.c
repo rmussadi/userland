@@ -104,11 +104,11 @@ static RASPITEXUTIL_SHADER_PROGRAM_T vcsm_square_shader =
 static RASPITEXUTIL_SHADER_PROGRAM_T line_shader =
 {
     .vertex_source =
-   "attribute vec4 vertex; \n"
+   "attribute vec2 vertex; \n"
    "void main() \n"
    "{ \n"
-   " gl_Position = vertex; \n"
-    "} \n",
+    "   gl_Position = vec4(vertex, 0.9, 1.0);\n"
+   "} \n",
     
     .fragment_source =
     "precision mediump float; \n"
@@ -116,7 +116,6 @@ static RASPITEXUTIL_SHADER_PROGRAM_T line_shader =
     "{ \n"
     " gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); \n"
     "}\n",
-    .uniform_names = {"tex"},
     .attribute_names = {"vertex"},
 };
 
@@ -127,14 +126,15 @@ static GLfloat quad_varray[] = {
    -1.0f, 1.0f, 1.0f, 1.0f, -1.0f, -1.0f,
 };
 
+static GLfloat line_varray[] =
+{
+   -0.5f, -0.5f, 0.5f, 0.5f,
+};
+
 static GLuint quad_vbo;
 
-#ifdef USE_READPIXELS
-unsigned char *pixel_buffer;
-#else
 static struct egl_image_brcm_vcsm_info vcsm_info;
 static EGLImageKHR eglFbImage;
-#endif
 static GLuint fb_tex_name;
 static GLuint fb_name;
 
@@ -174,7 +174,11 @@ static int vcsm_square_init(RASPITEX_STATE *raspitex_state)
     rc = raspitexutil_build_shader_program(&vcsm_square_shader);
     GLCHK(glUseProgram(vcsm_square_shader.program));
     GLCHK(glUniform1i(vcsm_square_shader.uniform_locations[0], 0)); // tex unit
-
+    // Shader for lines
+    rc = raspitexutil_build_shader_program(&line_shader);
+    GLCHK(glUseProgram(line_shader.program));
+    GLCHK(glUniform1i(line_shader.uniform_locations[0], 0)); 
+    
     GLCHK(glGenFramebuffers(1, &fb_name));
     GLCHK(glBindFramebuffer(GL_FRAMEBUFFER, fb_name));
 
@@ -183,15 +187,6 @@ static int vcsm_square_init(RASPITEX_STATE *raspitex_state)
     GLCHK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
     GLCHK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
 
-#ifdef USE_READPIXELS
-    printf("Using glReadPixels\n");
-    GLCHK(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, fb_width, fb_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL));
-    pixel_buffer = malloc(fb_width * fb_height * 4);
-    if (! pixel_buffer) {
-        rc = -1;
-        goto end;
-    }
-#else /* USE_READPIXELS */
     printf("Using VCSM\n");
     vcsm_info.width = fb_width;
     vcsm_info.height = fb_height;
@@ -204,7 +199,6 @@ static int vcsm_square_init(RASPITEX_STATE *raspitex_state)
     }
 
     GLCHK(glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, eglFbImage));
-#endif /* USE_READPIXELS */
 
     GLCHK(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fb_tex_name, 0));
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
@@ -240,47 +234,6 @@ static void vcsm_square_draw_pattern(unsigned char *buffer)
     }
 }
 
-#ifdef USE_READPIXELS
-static int vcsm_square_redraw_readpixels(RASPITEX_STATE *raspitex_state)
-{
-    vcos_log_trace("%s", VCOS_FUNCTION);
-
-    GLCHK(glBindFramebuffer(GL_FRAMEBUFFER, fb_name));
-    GLCHK(glViewport(0,0,fb_width,fb_height));
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    // Fill the viewport with the camFill the viewport with the camera image
-    GLCHK(glUseProgram(vcsm_square_oes_shader.program));
-    GLCHK(glActiveTexture(GL_TEXTURE0));
-    GLCHK(glBindTexture(GL_TEXTURE_EXTERNAL_OES, raspitex_state->y_texture));
-    GLCHK(glBindBuffer(GL_ARRAY_BUFFER, quad_vbo));
-    GLCHK(glEnableVertexAttribArray(vcsm_square_oes_shader.attribute_locations[0]));
-    GLCHK(glVertexAttribPointer(vcsm_square_oes_shader.attribute_locations[0], 2, GL_FLOAT, GL_FALSE, 0, 0));
-    GLCHK(glDrawArrays(GL_TRIANGLES, 0, 6));
-
-    GLCHK(glReadPixels(0, 0, fb_width, fb_height, GL_RGBA, GL_UNSIGNED_BYTE, pixel_buffer));
-
-    vcsm_square_draw_pattern(pixel_buffer);
-
-    // Enable default window surface
-    GLCHK(glBindFramebuffer(GL_FRAMEBUFFER, 0));
-
-    // Draw the modified texture buffer to the screen
-    GLCHK(glViewport(raspitex_state->x, raspitex_state->y, raspitex_state->width, raspitex_state->height));
-    GLCHK(glUseProgram(vcsm_square_shader.program));
-    GLCHK(glActiveTexture(GL_TEXTURE0));
-    GLCHK(glBindTexture(GL_TEXTURE_2D, fb_tex_name));
-    GLCHK(glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, fb_width, fb_height, GL_RGBA, GL_UNSIGNED_BYTE, pixel_buffer));
-    GLCHK(glEnableVertexAttribArray(vcsm_square_shader.attribute_locations[0]));
-    GLCHK(glVertexAttribPointer(vcsm_square_shader.attribute_locations[0], 2, GL_FLOAT, GL_FALSE, 0, 0));
-    GLCHK(glDrawArrays(GL_TRIANGLES, 0, 6));
-
-    GLCHK(glDisableVertexAttribArray(vcsm_square_shader.attribute_locations[0]));
-    GLCHK(glUseProgram(0));
-
-    return 0;
-}
-#else /* USE_READPIXELS */
 static int vcsm_square_redraw(RASPITEX_STATE *raspitex_state)
 {
     unsigned char *vcsm_buffer = NULL;
@@ -294,7 +247,7 @@ static int vcsm_square_redraw(RASPITEX_STATE *raspitex_state)
     GLCHK(glViewport(0, 0, fb_width, fb_height));
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // Fill the viewport with the camFill the viewport with the camera image
+    // Fill the viewport with the camera image
     GLCHK(glUseProgram(vcsm_square_oes_shader.program));
     GLCHK(glActiveTexture(GL_TEXTURE0));
     GLCHK(glBindTexture(GL_TEXTURE_EXTERNAL_OES, raspitex_state->y_texture));
@@ -336,18 +289,13 @@ static int vcsm_square_redraw(RASPITEX_STATE *raspitex_state)
 
     return 0;
 }
-#endif /* USE_READPIXELS */
 
 int vcsm_square_open(RASPITEX_STATE *raspitex_state)
 {
     vcos_log_trace("%s", VCOS_FUNCTION);
 
     raspitex_state->ops.gl_init = vcsm_square_init;
-#ifdef USE_READPIXELS
-    raspitex_state->ops.redraw = vcsm_square_redraw_readpixels;
-#else
     raspitex_state->ops.redraw = vcsm_square_redraw;
-#endif /* USE_READPIXELS */
     raspitex_state->ops.update_y_texture = raspitexutil_update_y_texture;
     return 0;
 }
