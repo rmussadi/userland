@@ -104,17 +104,23 @@ static RASPITEXUTIL_SHADER_PROGRAM_T vcsm_square_shader =
 static RASPITEXUTIL_SHADER_PROGRAM_T line_shader =
 {
     .vertex_source =
-   "attribute vec2 vertex; \n"
+    "attribute vec2 vertex; \n"
+    "varying vec3 color;\n"
    "void main() \n"
    "{ \n"
     "   gl_Position = vec4(vertex, 0.9, 1.0);\n"
+    "   color = vec3(1.0, 0.0, 0.0);"
+    "   if (vertex.x > 0.0) {"
+         "   color = vec3(1.0, 1.0, 1.0);"
+        "}"
    "} \n",
     
     .fragment_source =
     "precision mediump float; \n"
+    "varying vec3 color;\n"
     "void main() \n"
     "{ \n"
-    " gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); \n"
+    " gl_FragColor = vec4(color, 1.0); \n"
     "}\n",
     .attribute_names = {"vertex"},
 };
@@ -128,10 +134,14 @@ static GLfloat quad_varray[] = {
 
 static GLfloat line_varray[] =
 {
-   -0.5f, -0.5f, 0.5f, 0.5f,
+  -0.1f, -0.1f,
+  -0.1f, 0.1f,
+   0.1f, 0.1f,
+   0.1f, -0.1f,
 };
 
 static GLuint quad_vbo;
+static GLuint line_vbo;
 
 static struct egl_image_brcm_vcsm_info vcsm_info;
 static EGLImageKHR eglFbImage;
@@ -174,10 +184,11 @@ static int vcsm_square_init(RASPITEX_STATE *raspitex_state)
     rc = raspitexutil_build_shader_program(&vcsm_square_shader);
     GLCHK(glUseProgram(vcsm_square_shader.program));
     GLCHK(glUniform1i(vcsm_square_shader.uniform_locations[0], 0)); // tex unit
+
     // Shader for lines
     rc = raspitexutil_build_shader_program(&line_shader);
     GLCHK(glUseProgram(line_shader.program));
-    GLCHK(glUniform1i(line_shader.uniform_locations[0], 0)); 
+    //    GLCHK(glUniform1i(line_shader.uniform_locations[0], 0)); 
     
     GLCHK(glGenFramebuffers(1, &fb_name));
     GLCHK(glBindFramebuffer(GL_FRAMEBUFFER, fb_name));
@@ -211,7 +222,11 @@ static int vcsm_square_init(RASPITEX_STATE *raspitex_state)
     GLCHK(glBindBuffer(GL_ARRAY_BUFFER, quad_vbo));
     GLCHK(glBufferData(GL_ARRAY_BUFFER, sizeof(quad_varray), quad_varray, GL_STATIC_DRAW));
 
-    GLCHK(glClearColor(0, 0, 0, 0));
+    GLCHK(glGenBuffers(1, &line_vbo));
+    GLCHK(glBindBuffer(GL_ARRAY_BUFFER, line_vbo));
+    GLCHK(glBufferData(GL_ARRAY_BUFFER, sizeof(line_varray), line_varray, GL_STATIC_DRAW));
+
+    GLCHK(glClearColor(0.1f, 0.1f, 0.1f, 0.5));
 end:
     return rc;
 }
@@ -241,7 +256,8 @@ static int vcsm_square_redraw(RASPITEX_STATE *raspitex_state)
 
     vcos_log_trace("%s", VCOS_FUNCTION);
 
-    glClearColor(255, 0, 0, 255);
+    //glClearColor(255, 0, 0, 255);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     GLCHK(glBindFramebuffer(GL_FRAMEBUFFER, fb_name));
     GLCHK(glViewport(0, 0, fb_width, fb_height));
@@ -250,12 +266,14 @@ static int vcsm_square_redraw(RASPITEX_STATE *raspitex_state)
     // Fill the viewport with the camera image
     GLCHK(glUseProgram(vcsm_square_oes_shader.program));
     GLCHK(glActiveTexture(GL_TEXTURE0));
+
+
     GLCHK(glBindTexture(GL_TEXTURE_EXTERNAL_OES, raspitex_state->y_texture));
     GLCHK(glBindBuffer(GL_ARRAY_BUFFER, quad_vbo));
+
     GLCHK(glEnableVertexAttribArray(vcsm_square_oes_shader.attribute_locations[0]));
     GLCHK(glVertexAttribPointer(vcsm_square_oes_shader.attribute_locations[0], 2, GL_FLOAT, GL_FALSE, 0, 0));
     GLCHK(glDrawArrays(GL_TRIANGLES, 0, 6));
-
     GLCHK(glFinish());
 
     // Make the buffer CPU addressable with host cache enabled
@@ -267,6 +285,7 @@ static int vcsm_square_redraw(RASPITEX_STATE *raspitex_state)
     vcos_log_trace("Locked vcsm handle %d at %p\n", vcsm_info.vcsm_handle, vcsm_buffer);
 
     vcsm_square_draw_pattern(vcsm_buffer);
+    
 
     // Release the locked texture memory to flush the CPU cache and allow GPU
     // to read it
@@ -283,8 +302,23 @@ static int vcsm_square_redraw(RASPITEX_STATE *raspitex_state)
     GLCHK(glEnableVertexAttribArray(vcsm_square_shader.attribute_locations[0]));
     GLCHK(glVertexAttribPointer(vcsm_square_shader.attribute_locations[0], 2, GL_FLOAT, GL_FALSE, 0, 0));
     GLCHK(glDrawArrays(GL_TRIANGLES, 0, 6));
-
     GLCHK(glDisableVertexAttribArray(vcsm_square_shader.attribute_locations[0]));
+
+    // Enable default window surface
+    GLCHK(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+
+    // Draw the modified texture buffer to the screen
+    GLCHK(glViewport(raspitex_state->x, raspitex_state->y, raspitex_state->width, raspitex_state->height));
+
+    GLCHK(glBindBuffer(GL_ARRAY_BUFFER, line_vbo));
+    // Draw lines
+    GLCHK(glUseProgram(line_shader.program));
+    GLCHK(glEnableVertexAttribArray(line_shader.attribute_locations[0]));
+    GLCHK(glVertexAttribPointer(line_shader.attribute_locations[0], 2, GL_FLOAT, GL_FALSE, 0, 0));
+    GLCHK(glDrawArrays(GL_LINE_LOOP, 0, 4));
+
+    GLCHK(glDisableVertexAttribArray(line_shader.attribute_locations[0]));
+
     GLCHK(glUseProgram(0));
 
     return 0;
