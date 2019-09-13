@@ -1,31 +1,3 @@
-/*
-Copyright (c) 2013, Broadcom Europe Ltd
-Copyright (c) 2016, Tim Gover
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
-    * Redistributions of source code must retain the above copyright
-      notice, this list of conditions and the following disclaimer.
-    * Redistributions in binary form must reproduce the above copyright
-      notice, this list of conditions and the following disclaimer in the
-      documentation and/or other materials provided with the distribution.
-    * Neither the name of the copyright holder nor the
-      names of its contributors may be used to endorse or promote products
-      derived from this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY
-DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
-ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
-
 /* Make the render output CPU accessible by defining a framebuffer texture
  * stored in a VCSM (VideoCore shared memory) EGL image.
  *
@@ -190,38 +162,37 @@ static int vcsm_square_init(RASPITEX_STATE *raspitex_state)
     GLCHK(glUseProgram(line_shader.program));
     //    GLCHK(glUniform1i(line_shader.uniform_locations[0], 0)); 
     
-    GLCHK(glGenFramebuffers(1, &fb_name));
-    GLCHK(glBindFramebuffer(GL_FRAMEBUFFER, fb_name));
+    // --------- Frame Buffer stuff -----------
+    GLCHK(glGenFramebuffers(1, &fb_name));   // Create a new FBO object
+    GLCHK(glBindFramebuffer(GL_FRAMEBUFFER, fb_name));  // Make it active
 
-    GLCHK(glGenTextures(1, &fb_tex_name));
-    GLCHK(glBindTexture(GL_TEXTURE_2D, fb_tex_name));
+    GLCHK(glGenTextures(1, &fb_tex_name));   // Create a new OpenGL Texture object
+    GLCHK(glBindTexture(GL_TEXTURE_2D, fb_tex_name));  // Make it active
+
     GLCHK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
     GLCHK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
 
     printf("Using VCSM\n");
     vcsm_info.width = fb_width;
     vcsm_info.height = fb_height;
-    eglFbImage = eglCreateImageKHR(raspitex_state->display, EGL_NO_CONTEXT,
-            EGL_IMAGE_BRCM_VCSM, &vcsm_info, NULL);
-    if (eglFbImage == EGL_NO_IMAGE_KHR || vcsm_info.vcsm_handle == 0) {
-        vcos_log_error("%s: Failed to create EGL VCSM image\n", VCOS_FUNCTION);
-        rc = -1;
-        goto end;
-    }
 
+    eglFbImage = eglCreateImageKHR(raspitex_state->display, EGL_NO_CONTEXT, EGL_IMAGE_BRCM_VCSM, &vcsm_info, NULL);
+    if (eglFbImage == EGL_NO_IMAGE_KHR || vcsm_info.vcsm_handle == 0) {
+        vcos_log_error("%s: Failed to create EGL VCSM image\n", VCOS_FUNCTION);  return -1;
+    }
     GLCHK(glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, eglFbImage));
 
     GLCHK(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fb_tex_name, 0));
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        vcos_log_error("GL_FRAMEBUFFER is not complete\n");
-        rc = -1;
-        goto end;
+        vcos_log_error("GL_FRAMEBUFFER is not complete\n");	return -1;
     }
-    GLCHK(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+
+    // --------- QUAD VBO stuff -----------
     GLCHK(glGenBuffers(1, &quad_vbo));
     GLCHK(glBindBuffer(GL_ARRAY_BUFFER, quad_vbo));
     GLCHK(glBufferData(GL_ARRAY_BUFFER, sizeof(quad_varray), quad_varray, GL_STATIC_DRAW));
 
+    // --------- LINE VBO stuff -----------
     GLCHK(glGenBuffers(1, &line_vbo));
     GLCHK(glBindBuffer(GL_ARRAY_BUFFER, line_vbo));
     GLCHK(glBufferData(GL_ARRAY_BUFFER, sizeof(line_varray), line_varray, GL_STATIC_DRAW));
@@ -257,8 +228,9 @@ static int vcsm_square_redraw(RASPITEX_STATE *raspitex_state)
     vcos_log_trace("%s", VCOS_FUNCTION);
 
     //glClearColor(255, 0, 0, 255);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    // Clear screen frame buffer which is currently bound 
 
+    // Bind our FBO and clear it out
     GLCHK(glBindFramebuffer(GL_FRAMEBUFFER, fb_name));
     GLCHK(glViewport(0, 0, fb_width, fb_height));
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -266,7 +238,6 @@ static int vcsm_square_redraw(RASPITEX_STATE *raspitex_state)
     // Fill the viewport with the camera image
     GLCHK(glUseProgram(vcsm_square_oes_shader.program));
     GLCHK(glActiveTexture(GL_TEXTURE0));
-
 
     GLCHK(glBindTexture(GL_TEXTURE_EXTERNAL_OES, raspitex_state->y_texture));
     GLCHK(glBindBuffer(GL_ARRAY_BUFFER, quad_vbo));
@@ -279,25 +250,23 @@ static int vcsm_square_redraw(RASPITEX_STATE *raspitex_state)
     // Make the buffer CPU addressable with host cache enabled
     vcsm_buffer = (unsigned char *) vcsm_lock_cache(vcsm_info.vcsm_handle, VCSM_CACHE_TYPE_HOST, &cache_type);
     if (! vcsm_buffer) {
-        vcos_log_error("Failed to lock VCSM buffer for handle %d\n", vcsm_info.vcsm_handle);
-        return -1;
+        vcos_log_error("Failed to lock VCSM buffer for handle %d\n", vcsm_info.vcsm_handle);    return -1;
     }
     vcos_log_trace("Locked vcsm handle %d at %p\n", vcsm_info.vcsm_handle, vcsm_buffer);
 
     vcsm_square_draw_pattern(vcsm_buffer);
-    
 
-    // Release the locked texture memory to flush the CPU cache and allow GPU
-    // to read it
+    // Release the locked texture memory to flush the CPU cache and allow GPU to read it
     vcsm_unlock_ptr(vcsm_buffer);
 
     // Enable default window surface
     GLCHK(glBindFramebuffer(GL_FRAMEBUFFER, 0));
-
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    
     // Draw the modified texture buffer to the screen
     GLCHK(glViewport(raspitex_state->x, raspitex_state->y, raspitex_state->width, raspitex_state->height));
     GLCHK(glUseProgram(vcsm_square_shader.program));
-    GLCHK(glActiveTexture(GL_TEXTURE0));
+    //GLCHK(glActiveTexture(GL_TEXTURE0));  // already done above 
     GLCHK(glBindTexture(GL_TEXTURE_2D, fb_tex_name));
     GLCHK(glEnableVertexAttribArray(vcsm_square_shader.attribute_locations[0]));
     GLCHK(glVertexAttribPointer(vcsm_square_shader.attribute_locations[0], 2, GL_FLOAT, GL_FALSE, 0, 0));
@@ -305,7 +274,7 @@ static int vcsm_square_redraw(RASPITEX_STATE *raspitex_state)
     GLCHK(glDisableVertexAttribArray(vcsm_square_shader.attribute_locations[0]));
 
     // Enable default window surface
-    GLCHK(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+    // GLCHK(glBindFramebuffer(GL_FRAMEBUFFER, 0)); // already done above
 
     // Draw the modified texture buffer to the screen
     GLCHK(glViewport(raspitex_state->x, raspitex_state->y, raspitex_state->width, raspitex_state->height));
