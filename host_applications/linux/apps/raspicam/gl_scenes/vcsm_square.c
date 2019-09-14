@@ -230,7 +230,7 @@ static int vcsm_square_redraw(RASPITEX_STATE *raspitex_state)
     //glClearColor(255, 0, 0, 255);
     // Clear screen frame buffer which is currently bound 
 
-    // Bind our FBO and clear it out
+    // --------------  Bind our Virtual FBO and clear it out
     GLCHK(glBindFramebuffer(GL_FRAMEBUFFER, fb_name));
     GLCHK(glViewport(0, 0, fb_width, fb_height));
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -238,7 +238,7 @@ static int vcsm_square_redraw(RASPITEX_STATE *raspitex_state)
     // Fill the viewport with the camera image
     GLCHK(glUseProgram(vcsm_square_oes_shader.program));
     GLCHK(glActiveTexture(GL_TEXTURE0));
-
+    // The Y-Texture is bound here- it's an oppaque ptr from the camera
     GLCHK(glBindTexture(GL_TEXTURE_EXTERNAL_OES, raspitex_state->y_texture));
     GLCHK(glBindBuffer(GL_ARRAY_BUFFER, quad_vbo));
 
@@ -277,10 +277,10 @@ static int vcsm_square_redraw(RASPITEX_STATE *raspitex_state)
     // GLCHK(glBindFramebuffer(GL_FRAMEBUFFER, 0)); // already done above
 
     // Draw the modified texture buffer to the screen
-    GLCHK(glViewport(raspitex_state->x, raspitex_state->y, raspitex_state->width, raspitex_state->height));
+    //GLCHK(glViewport(raspitex_state->x, raspitex_state->y, raspitex_state->width, raspitex_state->height));
 
-    GLCHK(glBindBuffer(GL_ARRAY_BUFFER, line_vbo));
     // Draw lines
+    GLCHK(glBindBuffer(GL_ARRAY_BUFFER, line_vbo));
     GLCHK(glUseProgram(line_shader.program));
     GLCHK(glEnableVertexAttribArray(line_shader.attribute_locations[0]));
     GLCHK(glVertexAttribPointer(line_shader.attribute_locations[0], 2, GL_FLOAT, GL_FALSE, 0, 0));
