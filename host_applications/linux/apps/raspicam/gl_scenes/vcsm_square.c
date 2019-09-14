@@ -230,54 +230,37 @@ static int vcsm_square_redraw(RASPITEX_STATE *raspitex_state)
     //glClearColor(255, 0, 0, 255);
     // Clear screen frame buffer which is currently bound 
 
+    // ------ Fill the viewport with the camera image
     // --------------  Bind our Virtual FBO and clear it out
     GLCHK(glBindFramebuffer(GL_FRAMEBUFFER, fb_name));
     GLCHK(glViewport(0, 0, fb_width, fb_height));
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    // Fill the viewport with the camera image
     GLCHK(glUseProgram(vcsm_square_oes_shader.program));
     GLCHK(glActiveTexture(GL_TEXTURE0));
-    // The Y-Texture is bound here- it's an oppaque ptr from the camera
-    GLCHK(glBindTexture(GL_TEXTURE_EXTERNAL_OES, raspitex_state->y_texture));
+    GLCHK(glBindTexture(GL_TEXTURE_EXTERNAL_OES, raspitex_state->y_texture)); // bind Y-Texture(oppaque ptr from cam)
     GLCHK(glBindBuffer(GL_ARRAY_BUFFER, quad_vbo));
-
     GLCHK(glEnableVertexAttribArray(vcsm_square_oes_shader.attribute_locations[0]));
     GLCHK(glVertexAttribPointer(vcsm_square_oes_shader.attribute_locations[0], 2, GL_FLOAT, GL_FALSE, 0, 0));
     GLCHK(glDrawArrays(GL_TRIANGLES, 0, 6));
     GLCHK(glFinish());
 
-    // Make the buffer CPU addressable with host cache enabled
+    // Make the buffer CPU addressable with host cache enabled and Modify it
     vcsm_buffer = (unsigned char *) vcsm_lock_cache(vcsm_info.vcsm_handle, VCSM_CACHE_TYPE_HOST, &cache_type);
-    if (! vcsm_buffer) {
-        vcos_log_error("Failed to lock VCSM buffer for handle %d\n", vcsm_info.vcsm_handle);    return -1;
-    }
+    if (! vcsm_buffer) { vcos_log_error("Failed to lock VCSM buffer for handle %d\n", vcsm_info.vcsm_handle); return -1;}
     vcos_log_trace("Locked vcsm handle %d at %p\n", vcsm_info.vcsm_handle, vcsm_buffer);
-
     vcsm_square_draw_pattern(vcsm_buffer);
+    vcsm_unlock_ptr(vcsm_buffer); // Release the locked texture memory to flush the CPU cache and allow GPU to read it
 
-    // Release the locked texture memory to flush the CPU cache and allow GPU to read it
-    vcsm_unlock_ptr(vcsm_buffer);
-
-    // Enable default window surface
+    // Draw the modified texture buffer to the screen
     GLCHK(glBindFramebuffer(GL_FRAMEBUFFER, 0));
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    
-    // Draw the modified texture buffer to the screen
     GLCHK(glViewport(raspitex_state->x, raspitex_state->y, raspitex_state->width, raspitex_state->height));
     GLCHK(glUseProgram(vcsm_square_shader.program));
-    //GLCHK(glActiveTexture(GL_TEXTURE0));  // already done above 
     GLCHK(glBindTexture(GL_TEXTURE_2D, fb_tex_name));
     GLCHK(glEnableVertexAttribArray(vcsm_square_shader.attribute_locations[0]));
     GLCHK(glVertexAttribPointer(vcsm_square_shader.attribute_locations[0], 2, GL_FLOAT, GL_FALSE, 0, 0));
     GLCHK(glDrawArrays(GL_TRIANGLES, 0, 6));
     GLCHK(glDisableVertexAttribArray(vcsm_square_shader.attribute_locations[0]));
-
-    // Enable default window surface
-    // GLCHK(glBindFramebuffer(GL_FRAMEBUFFER, 0)); // already done above
-
-    // Draw the modified texture buffer to the screen
-    //GLCHK(glViewport(raspitex_state->x, raspitex_state->y, raspitex_state->width, raspitex_state->height));
 
     // Draw lines
     GLCHK(glBindBuffer(GL_ARRAY_BUFFER, line_vbo));
@@ -287,7 +270,6 @@ static int vcsm_square_redraw(RASPITEX_STATE *raspitex_state)
     GLCHK(glDrawArrays(GL_LINE_LOOP, 0, 4));
 
     GLCHK(glDisableVertexAttribArray(line_shader.attribute_locations[0]));
-
     GLCHK(glUseProgram(0));
 
     return 0;
