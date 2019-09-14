@@ -1128,7 +1128,8 @@ static void rename_file(RASPISTILL_STATE *state, FILE *output_file,
 int main(int argc, const char **argv)
 {
    // Our main data storage vessel..
-   RASPISTILL_STATE state;
+   RASPISTILL_STATE rstate;
+   
    int exit_code = EX_OK;
 
    MMAL_STATUS_T status = MMAL_SUCCESS;
@@ -1153,56 +1154,56 @@ int main(int argc, const char **argv)
       display_valid_parameters(basename(argv[0]), &application_help_message);
       exit(EX_USAGE);
    }
-   default_status(&state);
+   default_status(&rstate);
 
    // Parse the command line and put options in to our status structure
-   if (parse_cmdline(argc, argv, &state))   {
+   if (parse_cmdline(argc, argv, &rstate))   {
       exit(EX_USAGE);
    }
 
-   if (state.timeout == -1)
-      state.timeout = 5000;
+   if (rstate.timeout == -1)
+      rstate.timeout = 5000;
 
    // Setup for sensor specific parameters
-   get_sensor_defaults(state.common_settings.cameraNum, state.common_settings.camera_name,
-                       &state.common_settings.width, &state.common_settings.height);
-   if (state.common_settings.verbose)   {
+   get_sensor_defaults(rstate.common_settings.cameraNum, rstate.common_settings.camera_name,
+                       &rstate.common_settings.width, &rstate.common_settings.height);
+   if (rstate.common_settings.verbose)   {
       print_app_details(stderr);
-      dump_status(&state);
+      dump_status(&rstate);
    }
 
-   raspitex_init(&state.raspitex_state);
+   raspitex_init(&rstate.raspitex_state);
    // OK, we have a nice set of parameters. Now set up our components. We have 3 components. Camera, Preview and encoder.
    // Camera and encoder are different in stills/video, but preview is the same so handed off to a separate module
-   assert ((status = create_camera_component(&state)) == MMAL_SUCCESS);
-   assert ((status = create_encoder_component(&state)) == MMAL_SUCCESS);
+   assert ((status = create_camera_component(&rstate)) == MMAL_SUCCESS);
+   assert ((status = create_encoder_component(&rstate)) == MMAL_SUCCESS);
    PORT_USERDATA callback_data;
 
-   if (state.common_settings.verbose)
+   if (rstate.common_settings.verbose)
      fprintf(stderr, "Starting component connection stage\n");
 
-   camera_preview_port = state.camera_component->output[MMAL_CAMERA_PREVIEW_PORT];
-   camera_video_port   = state.camera_component->output[MMAL_CAMERA_VIDEO_PORT];
-   camera_still_port   = state.camera_component->output[MMAL_CAMERA_CAPTURE_PORT];
-   encoder_input_port  = state.encoder_component->input[0];
-   encoder_output_port = state.encoder_component->output[0];
+   camera_preview_port = rstate.camera_component->output[MMAL_CAMERA_PREVIEW_PORT];
+   camera_video_port   = rstate.camera_component->output[MMAL_CAMERA_VIDEO_PORT];
+   camera_still_port   = rstate.camera_component->output[MMAL_CAMERA_CAPTURE_PORT];
+   encoder_input_port  = rstate.encoder_component->input[0];
+   encoder_output_port = rstate.encoder_component->output[0];
 
-   if (state.common_settings.verbose)
+   if (rstate.common_settings.verbose)
      fprintf(stderr, "Connecting camera stills port to encoder input port\n");
 
    // Now connect the camera to the encoder
-   status = connect_ports(camera_still_port, encoder_input_port, &state.encoder_connection);
+   status = connect_ports(camera_still_port, encoder_input_port, &rstate.encoder_connection);
    assert (status == MMAL_SUCCESS);
       
    // Set up our userdata - this is passed though to the callback where we need the information. Null until we open our filename
    callback_data.file_handle = NULL;
-   callback_data.pstate = &state;
+   callback_data.pstate = &rstate;
 
    // vcos_status = vcos_semaphore_create(&callback_data.complete_semaphore, "RaspiStill-sem", 0);
    vcos_assert(vcos_semaphore_create(&callback_data.complete_semaphore, "RaspiStill-sem", 0) == VCOS_SUCCESS);
 
    // If GL preview is requested then start the GL threads
-   if (state.useGL && (raspitex_start(&state.raspitex_state) != 0))
+   if (rstate.useGL && (raspitex_start(&rstate.raspitex_state) != 0))
      goto error;
       
    int frame, keep_looping = 1;
@@ -1210,11 +1211,11 @@ int main(int argc, const char **argv)
    char *use_filename = NULL;      // Temporary filename while image being written
    char *final_filename = NULL;    // Name that file gets once writing complete
    
-   frame = state.frameStart - 1;
+   frame = rstate.frameStart - 1;
 	  
    while (keep_looping) {
-       keep_looping = wait_for_next_frame(&state, &frame);
-       if (state.datetime) {
+       keep_looping = wait_for_next_frame(&rstate, &frame);
+       if (rstate.datetime) {
          time_t rawtime;
          struct tm *timeinfo;
          
@@ -1231,15 +1232,15 @@ int main(int argc, const char **argv)
          frame *= 100;
          frame += timeinfo->tm_sec;
        }
-       if (state.timestamp) {
+       if (rstate.timestamp) {
            frame = (int)time(NULL);
        }
        // Open the file
-       if (state.common_settings.filename) {
+       if (rstate.common_settings.filename) {
            vcos_assert(use_filename == NULL && final_filename == NULL);
-           status = create_filenames(&final_filename, &use_filename, state.common_settings.filename, frame);
+           status = create_filenames(&final_filename, &use_filename, rstate.common_settings.filename, frame);
            assert (status == MMAL_SUCCESS);
-           if (state.common_settings.verbose)
+           if (rstate.common_settings.verbose)
              fprintf(stderr, "Opening output file %s\n", final_filename);
            // Technically it is opening the temp~ filename which will be renamed to the final filename
            output_file = fopen(use_filename, "wb");
@@ -1248,43 +1249,43 @@ int main(int argc, const char **argv)
            callback_data.file_handle = output_file;
        }              
        // We only capture if a filename was specified and it opened
-       if (state.useGL && state.glCapture && output_file) {
-           int rc = raspitex_capture(&state.raspitex_state, output_file); // Save the next GL framebuffer as the next camera still
+       if (rstate.useGL && rstate.glCapture && output_file) {
+           int rc = raspitex_capture(&rstate.raspitex_state, output_file); // Save the next GL framebuffer as the next camera still
            if (rc != 0)
                vcos_log_error("Failed to capture GL preview");
-           rename_file(&state, output_file, final_filename, use_filename, frame);
+           rename_file(&rstate, output_file, final_filename, use_filename, frame);
        }
        else if (output_file) {
            int num, q;
            // Must do before the encoder output port is enabled since once enabled no further exif data is accepted
-           mmal_port_parameter_set_boolean(state.encoder_component->output[0], MMAL_PARAMETER_EXIF_DISABLE, 1);     
+           mmal_port_parameter_set_boolean(rstate.encoder_component->output[0], MMAL_PARAMETER_EXIF_DISABLE, 1);     
            // Same with raw, apparently need to set it for each capture, whilst port is not enabled
-           if (state.wantRAW) {
+           if (rstate.wantRAW) {
                if (mmal_port_parameter_set_boolean(camera_still_port, MMAL_PARAMETER_ENABLE_RAW_CAPTURE, 1) != MMAL_SUCCESS)
                  vcos_log_error("RAW was requested, but failed to enable");
            }
            // There is a possibility that shutter needs to be set each loop.
-           if (mmal_status_to_int(mmal_port_parameter_set_uint32(state.camera_component->control, MMAL_PARAMETER_SHUTTER_SPEED,
-                                                                 state.camera_parameters.shutter_speed)) != MMAL_SUCCESS) {
+           if (mmal_status_to_int(mmal_port_parameter_set_uint32(rstate.camera_component->control, MMAL_PARAMETER_SHUTTER_SPEED,
+                                                                 rstate.camera_parameters.shutter_speed)) != MMAL_SUCCESS) {
                vcos_log_error("Unable to set shutter speed");
            }
-           if (state.common_settings.verbose)
+           if (rstate.common_settings.verbose)
                fprintf(stderr, "Enabling encoder output port and tell it its callback function\n");
            encoder_output_port->userdata = (struct MMAL_PORT_USERDATA_T *)&callback_data;
            status = mmal_port_enable(encoder_output_port, encoder_buffer_callback);
            // Send all the buffers to the encoder output port
-           num = mmal_queue_length(state.encoder_pool->queue);              
+           num = mmal_queue_length(rstate.encoder_pool->queue);              
            for (q=0; q<num; q++)  {
-               MMAL_BUFFER_HEADER_T *buffer = mmal_queue_get(state.encoder_pool->queue);
+               MMAL_BUFFER_HEADER_T *buffer = mmal_queue_get(rstate.encoder_pool->queue);
                if (!buffer)
                  vcos_log_error("Unable to get a required buffer %d from pool queue", q);
                if (mmal_port_send_buffer(encoder_output_port, buffer)!= MMAL_SUCCESS)
                  vcos_log_error("Unable to send a buffer to encoder output port (%d)", q);
            }
-           if (state.burstCaptureMode) {
-               mmal_port_parameter_set_boolean(state.camera_component->control,  MMAL_PARAMETER_CAMERA_BURST_CAPTURE, 1);
+           if (rstate.burstCaptureMode) {
+               mmal_port_parameter_set_boolean(rstate.camera_component->control,  MMAL_PARAMETER_CAMERA_BURST_CAPTURE, 1);
            }                
-           if (state.common_settings.verbose)
+           if (rstate.common_settings.verbose)
                fprintf(stderr, "Starting capture %d\n", frame);       
            if (mmal_port_parameter_set_boolean(camera_still_port, MMAL_PARAMETER_CAPTURE, 1) != MMAL_SUCCESS) {
                vcos_log_error("%s: Failed to start capture", __func__);
@@ -1293,12 +1294,12 @@ int main(int argc, const char **argv)
                // Wait for capture to complete. For some reason using vcos_semaphore_wait_timeout sometimes returns immediately
                // with bad parameter error even though it appears to be all correct, so reverting to untimed one until figure out why its erratic
                vcos_semaphore_wait(&callback_data.complete_semaphore);
-               if (state.common_settings.verbose)
+               if (rstate.common_settings.verbose)
                    fprintf(stderr, "Finished capture %d\n", frame);
            }
            // Ensure we don't die if get callback with no open file
            callback_data.file_handle = NULL;        
-           rename_file(&state, output_file, final_filename, use_filename, frame);
+           rename_file(&rstate, output_file, final_filename, use_filename, frame);
            status = mmal_port_disable(encoder_output_port); // Disable encoder output port
        }
         
@@ -1318,39 +1319,39 @@ int main(int argc, const char **argv)
    
    mmal_status_to_int(status);
    
-   if (state.common_settings.verbose)
+   if (rstate.common_settings.verbose)
      fprintf(stderr, "Closing down\n");
    
-   if (state.useGL) {
-     raspitex_stop(&state.raspitex_state);
-     raspitex_destroy(&state.raspitex_state);
+   if (rstate.useGL) {
+     raspitex_stop(&rstate.raspitex_state);
+     raspitex_destroy(&rstate.raspitex_state);
    }
    
    // Disable all our ports that are not handled by connections
    check_disable_port(camera_video_port);
    check_disable_port(encoder_output_port);
    
-   if (state.preview_connection)
-     mmal_connection_destroy(state.preview_connection);
+   if (rstate.preview_connection)
+     mmal_connection_destroy(rstate.preview_connection);
    
-   if (state.encoder_connection)
-     mmal_connection_destroy(state.encoder_connection);
+   if (rstate.encoder_connection)
+     mmal_connection_destroy(rstate.encoder_connection);
    
    /* Disable components */
-   if (state.encoder_component)
-     mmal_component_disable(state.encoder_component);
+   if (rstate.encoder_component)
+     mmal_component_disable(rstate.encoder_component);
    
-   if (state.preview_parameters.preview_component)
-     mmal_component_disable(state.preview_parameters.preview_component);
+   if (rstate.preview_parameters.preview_component)
+     mmal_component_disable(rstate.preview_parameters.preview_component);
    
-   if (state.camera_component)
-     mmal_component_disable(state.camera_component);
+   if (rstate.camera_component)
+     mmal_component_disable(rstate.camera_component);
    
-   destroy_encoder_component(&state);
-   raspipreview_destroy(&state.preview_parameters);
-   destroy_camera_component(&state);
+   destroy_encoder_component(&rstate);
+   raspipreview_destroy(&rstate.preview_parameters);
+   destroy_camera_component(&rstate);
    
-   if (state.common_settings.verbose)
+   if (rstate.common_settings.verbose)
      fprintf(stderr, "Close down completed, all components disconnected, disabled and destroyed\n\n");
 
    if (status != MMAL_SUCCESS)
