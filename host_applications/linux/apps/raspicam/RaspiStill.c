@@ -43,6 +43,7 @@
 #include "interface/mmal/util/mmal_connection.h"
 #include "interface/mmal/mmal_parameters_camera.h"
 
+#include "RaspiStill.h"
 #include "RaspiCommonSettings.h"
 #include "RaspiCamControl.h"
 #include "RaspiPreview.h"
@@ -1179,8 +1180,10 @@ int rs_init(int argc, const char **argv)
 
 int rs_teardown()
 {
-   //   mmal_status_to_int(status);
-   
+  vcos_semaphore_delete(&callback_data.complete_semaphore);
+
+  //   mmal_status_to_int(status);
+
    if (rstate.common_settings.verbose)
      fprintf(stderr, "Closing down\n");
    
@@ -1222,22 +1225,11 @@ int rs_teardown()
    return EX_OK;
 }
 
-/**
- * main
- */
-int main(int argc, const char **argv)
+void begin_loop()
 {
-  rs_init(argc, argv);
-  
   int frame;
    
    while (wait_for_next_frame(&rstate, &frame)) {
    } // end for (frame)
-      
-   vcos_semaphore_delete(&callback_data.complete_semaphore);
-   rs_teardown();
-   
-   return EX_OK;
 }
-
 
