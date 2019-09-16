@@ -51,11 +51,6 @@
 #include "RaspiTex.h"
 #include "RaspiHelpers.h"
 
-// TODO
-//#include "libgps_loader.h"
-
-//#include "RaspiGPS.h"
-
 #include <semaphore.h>
 #include <math.h>
 #include <pthread.h>
@@ -228,12 +223,6 @@ static int next_frame_description_size = sizeof(next_frame_description) / sizeof
  */
 static void default_status(RASPISTILL_STATE *state)
 {
-   if (!state)
-   {
-      vcos_assert(0);
-      return;
-   }
-
    memset(state, 0, sizeof(*state));
 
    raspicommonsettings_set_defaults(&state->common_settings);
@@ -629,74 +618,6 @@ static int parse_cmdline(int argc, const char **argv, RASPISTILL_STATE *state)
 
 
 /**
- *  buffer header callback function for encoder
- *
- *  Callback will dump buffer data to the specific file
- *
- * @param port Pointer to port from which callback originated
- * @param buffer mmal buffer header pointer
- */
-static void encoder_buffer_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
-{
-   int complete = 0;
-
-   // We pass our file handle and other stuff in via the userdata field.
-
-   PORT_USERDATA *pData = (PORT_USERDATA *)port->userdata;
-
-   if (pData)
-   {
-      int bytes_written = buffer->length;
-
-      if (buffer->length && pData->file_handle)
-      {
-         mmal_buffer_header_mem_lock(buffer);
-
-         bytes_written = fwrite(buffer->data, 1, buffer->length, pData->file_handle);
-
-         mmal_buffer_header_mem_unlock(buffer);
-      }
-
-      // We need to check we wrote what we wanted - it's possible we have run out of storage.
-      if (bytes_written != buffer->length)
-      {
-         vcos_log_error("Unable to write buffer to file - aborting");
-         complete = 1;
-      }
-
-      // Now flag if we have completed
-      if (buffer->flags & (MMAL_BUFFER_HEADER_FLAG_FRAME_END | MMAL_BUFFER_HEADER_FLAG_TRANSMISSION_FAILED))
-         complete = 1;
-   }
-   else
-   {
-      vcos_log_error("Received a encoder buffer callback with no state");
-   }
-
-   // release buffer back to the pool
-   mmal_buffer_header_release(buffer);
-
-   // and send one back to the port (if still open)
-   if (port->is_enabled)
-   {
-      MMAL_STATUS_T status = MMAL_SUCCESS;
-      MMAL_BUFFER_HEADER_T *new_buffer;
-
-      new_buffer = mmal_queue_get(pData->pstate->encoder_pool->queue);
-
-      if (new_buffer)
-      {
-         status = mmal_port_send_buffer(port, new_buffer);
-      }
-      if (!new_buffer || status != MMAL_SUCCESS)
-         vcos_log_error("Unable to return a buffer to the encoder port");
-   }
-
-   if (complete)
-      vcos_semaphore_post(&(pData->complete_semaphore));
-}
-
-/**
  * Create the camera component, set up its ports
  *
  * @param state Pointer to state control struct. camera_component member set to the created camera_component if successful.
@@ -995,36 +916,6 @@ static void destroy_encoder_component(RASPISTILL_STATE *state)
    }
 }
 
-
-/**
- * Allocates and generates a filename based on the
- * user-supplied pattern and the frame number.
- * On successful return, finalName and tempName point to malloc()ed strings
- * which must be freed externally.  (On failure, returns nulls that
- * don't need free()ing.)
- *
- * @param finalName pointer receives an
- * @param pattern sprintf pattern with %d to be replaced by frame
- * @param frame for timelapse, the frame number
- * @return Returns a MMAL_STATUS_T giving result of operation
-*/
-
-MMAL_STATUS_T create_filenames(char** finalName, char** tempName, char * pattern, int frame)
-{
-   *finalName = NULL;
-   *tempName = NULL;
-   if (0 > asprintf(finalName, pattern, frame) ||
-         0 > asprintf(tempName, "%s~", *finalName))
-   {
-      if (*finalName != NULL)
-      {
-         free(*finalName);
-      }
-      return MMAL_ENOMEM;    // It may be some other error, but it is not worth getting it right
-   }
-   return MMAL_SUCCESS;
-}
-
 /**
  * Function to wait in various ways (depending on settings) for the next frame
  *
@@ -1061,38 +952,6 @@ static int wait_for_next_frame(RASPISTILL_STATE *state, int *frame)
 
    // Should have returned by now, but default to timeout
    return keep_running;
-}
-
-static void rename_file(RASPISTILL_STATE *state, FILE *output_file,
-                        const char *final_filename, const char *use_filename, int frame)
-{
-   MMAL_STATUS_T status;
-
-   fclose(output_file);
-   vcos_assert(use_filename != NULL && final_filename != NULL);
-   if (0 != rename(use_filename, final_filename))
-   {
-      vcos_log_error("Could not rename temp file to: %s; %s",
-                     final_filename,strerror(errno));
-   }
-   if (state->linkname)
-   {
-      char *use_link;
-      char *final_link;
-      status = create_filenames(&final_link, &use_link, state->linkname, frame);
-
-      // Create hard link if possible, symlink otherwise
-      if (status != MMAL_SUCCESS
-            || (0 != link(final_filename, use_link)
-                &&  0 != symlink(final_filename, use_link))
-            || 0 != rename(use_link, final_link))
-      {
-         vcos_log_error("Could not link as filename: %s; %s",
-                        state->linkname,strerror(errno));
-      }
-      if (use_link) free(use_link);
-      if (final_link) free(final_link);
-   }
 }
 
 
@@ -1178,6 +1037,14 @@ int rs_init(int argc, const char **argv)
      return -1;
 }
 
+void begin_loop()
+{
+  int frame;
+   
+   while (wait_for_next_frame(&rstate, &frame)) {
+   } // end for (frame)
+}
+
 int rs_teardown()
 {
   vcos_semaphore_delete(&callback_data.complete_semaphore);
@@ -1225,11 +1092,10 @@ int rs_teardown()
    return EX_OK;
 }
 
-void begin_loop()
+typedef int (*callback_type)(float, float);
+
+int callmeback(callback_type t)
 {
-  int frame;
-   
-   while (wait_for_next_frame(&rstate, &frame)) {
-   } // end for (frame)
+    t(2.0,1.0);
 }
 
