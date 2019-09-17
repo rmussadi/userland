@@ -152,6 +152,49 @@ void draw_vcsm_rectangle()
     GLCHK(glDisableVertexAttribArray(line_shader.attribute_locations[0]));
 }
 
+// Write the shared memory texture writing something to each line. This is
+// just to show that the buffer really is CPU modifiable.
+static int vcsm_square_draw_pattern(unsigned char *buffer)
+{
+    static unsigned x_offset;
+
+    unsigned char *line_start = (unsigned char *) buffer;
+    unsigned width = fb_width > 32 ? 32 : fb_width;
+    int i = 0;
+    size_t stride = fb_width  << 2;
+
+    x_offset = (x_offset + 1) % (fb_width - width);
+    for (i = 0; i < fb_height; i++) {
+        memset(line_start + (x_offset << 2), ~0, width << 2);
+        line_start += stride;
+    }
+    return 0;
+}
+
+static int do_nothing(unsigned char *buffer)
+{
+  return 0;
+}
+
+typedef int (*buffer_cb_type)(unsigned char *);
+
+buffer_cb_type glbuff_cb = NULL;
+int set_glbuff_cb(buffer_cb_type callback_fn)
+{
+  glbuff_cb = callback_fn;
+  return 0;
+}
+
+//
+void publish_buffer(unsigned char *vcsm_buffer)
+{
+    if(glbuff_cb == NULL) {
+        vcsm_square_draw_pattern(vcsm_buffer);
+    } else {
+        glbuff_cb(vcsm_buffer);
+    }
+}
+
 
 static int vcsm_square_init(RASPITEX_STATE *raspitex_state)
 {
@@ -213,26 +256,10 @@ static int vcsm_square_init(RASPITEX_STATE *raspitex_state)
     init_vcsm_rectangle();
 
     GLCHK(glClearColor(0.1f, 0.1f, 0.1f, 0.5));
+
+    set_glbuff_cb(do_nothing);
 end:
     return rc;
-}
-
-// Write the shared memory texture writing something to each line. This is
-// just to show that the buffer really is CPU modifiable.
-static void vcsm_square_draw_pattern(unsigned char *buffer)
-{
-    static unsigned x_offset;
-
-    unsigned char *line_start = (unsigned char *) buffer;
-    unsigned width = fb_width > 32 ? 32 : fb_width;
-    int i = 0;
-    size_t stride = fb_width  << 2;
-
-    x_offset = (x_offset + 1) % (fb_width - width);
-    for (i = 0; i < fb_height; i++) {
-        memset(line_start + (x_offset << 2), ~0, width << 2);
-        line_start += stride;
-    }
 }
 
 static int vcsm_square_redraw(RASPITEX_STATE *raspitex_state)
@@ -263,7 +290,8 @@ static int vcsm_square_redraw(RASPITEX_STATE *raspitex_state)
     vcsm_buffer = (unsigned char *) vcsm_lock_cache(vcsm_info.vcsm_handle, VCSM_CACHE_TYPE_HOST, &cache_type);
     if (! vcsm_buffer) { vcos_log_error("Failed to lock VCSM buffer for handle %d\n", vcsm_info.vcsm_handle); return -1;}
     vcos_log_trace("Locked vcsm handle %d at %p\n", vcsm_info.vcsm_handle, vcsm_buffer);
-    vcsm_square_draw_pattern(vcsm_buffer);
+    //vcsm_square_draw_pattern(vcsm_buffer);
+    publish_buffer(vcsm_buffer);
     vcsm_unlock_ptr(vcsm_buffer); // Release the locked texture memory to flush the CPU cache and allow GPU to read it
 
     // Draw the modified texture buffer to the screen
