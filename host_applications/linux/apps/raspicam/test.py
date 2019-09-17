@@ -1,8 +1,8 @@
+#!/usr/bin/python
 
 import ctypes
 import sys
 
-callback_type = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_float, ctypes.c_float)
 
 def greater_than(a,b):
     if a > b:
@@ -13,10 +13,11 @@ def greater_than(a,b):
         return 0
 
 
+callback_type = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_float, ctypes.c_float)
 callback_func = callback_type(greater_than)
 
-_callmeback = ctypes.CDLL('libtq84.so')
-_callmeback.callmeback.argtype = (callback_type)
-#_callmeback.callmeback.argtypes = _callmeback.callmeback.argtype = (callback_type)
+_stilllib = ctypes.CDLL('libtq84.so')
+_stilllib.callmeback.argtype = (callback_type)  # Just so python doesn't have to guess the arg types
+#_stilllib.callmeback.argtypes = _stilllib.callmeback.argtype = (callback_type) # Just so python doesn't have to guess the arg types
 
-_callmeback.callmeback(callback_func)
+_stilllib.callmeback(callback_func)

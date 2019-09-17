@@ -33,5 +33,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "RaspiTex.h"
 
 int vcsm_square_open(RASPITEX_STATE *state);
+extern void init_vcsm_rectangle();
+extern void draw_vcsm_rectangle();
 
 #endif /* VCSM_SQUARE_H */

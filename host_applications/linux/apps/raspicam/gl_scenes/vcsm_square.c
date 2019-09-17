@@ -136,6 +136,23 @@ static const EGLint vcsm_square_egl_config_attribs[] =
     EGL_NONE
 };
 
+void init_vcsm_rectangle()
+{
+    GLCHK(glGenBuffers(1, &line_vbo));
+}
+
+void draw_vcsm_rectangle()
+{
+    GLCHK(glBindBuffer(GL_ARRAY_BUFFER, line_vbo));
+    GLCHK(glBufferData(GL_ARRAY_BUFFER, sizeof(line_varray), line_varray, GL_STATIC_DRAW));
+    GLCHK(glUseProgram(line_shader.program));
+    GLCHK(glEnableVertexAttribArray(line_shader.attribute_locations[0]));
+    GLCHK(glVertexAttribPointer(line_shader.attribute_locations[0], 2, GL_FLOAT, GL_FALSE, 0, 0));
+    GLCHK(glDrawArrays(GL_LINE_LOOP, 0, 4));
+    GLCHK(glDisableVertexAttribArray(line_shader.attribute_locations[0]));
+}
+
+
 static int vcsm_square_init(RASPITEX_STATE *raspitex_state)
 {
     int rc = vcsm_init();
@@ -193,9 +210,7 @@ static int vcsm_square_init(RASPITEX_STATE *raspitex_state)
     GLCHK(glBufferData(GL_ARRAY_BUFFER, sizeof(quad_varray), quad_varray, GL_STATIC_DRAW));
 
     // --------- LINE VBO stuff -----------
-    GLCHK(glGenBuffers(1, &line_vbo));
-    GLCHK(glBindBuffer(GL_ARRAY_BUFFER, line_vbo));
-    GLCHK(glBufferData(GL_ARRAY_BUFFER, sizeof(line_varray), line_varray, GL_STATIC_DRAW));
+    init_vcsm_rectangle();
 
     GLCHK(glClearColor(0.1f, 0.1f, 0.1f, 0.5));
 end:
@@ -262,14 +277,8 @@ static int vcsm_square_redraw(RASPITEX_STATE *raspitex_state)
     GLCHK(glDrawArrays(GL_TRIANGLES, 0, 6));
     GLCHK(glDisableVertexAttribArray(vcsm_square_shader.attribute_locations[0]));
 
-    // Draw lines
-    GLCHK(glBindBuffer(GL_ARRAY_BUFFER, line_vbo));
-    GLCHK(glUseProgram(line_shader.program));
-    GLCHK(glEnableVertexAttribArray(line_shader.attribute_locations[0]));
-    GLCHK(glVertexAttribPointer(line_shader.attribute_locations[0], 2, GL_FLOAT, GL_FALSE, 0, 0));
-    GLCHK(glDrawArrays(GL_LINE_LOOP, 0, 4));
+    draw_vcsm_rectangle();
 
-    GLCHK(glDisableVertexAttribArray(line_shader.attribute_locations[0]));
     GLCHK(glUseProgram(0));
 
     return 0;
