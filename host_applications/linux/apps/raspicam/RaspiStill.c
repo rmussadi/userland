@@ -1092,10 +1092,11 @@ int rs_teardown()
    return EX_OK;
 }
 
-typedef int (*callback_type)(float, float);
+typedef int (*callback_type)(float, float, void*);
 
+unsigned char buffer[] = {1,2,3,4,5,6,7,8,9,10};
 int callmeback(callback_type t)
 {
-    t(2.0,1.0);
+   t(2.0,1.0, buffer);
 }
 
