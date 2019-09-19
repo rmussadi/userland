@@ -90,13 +90,10 @@ typedef struct
    RASPICOMMONSETTINGS_PARAMETERS common_settings;     /// Common settings
    int timeout;                        /// Time taken before frame is grabbed and app then shuts down. Units are milliseconds
    int quality;                        /// JPEG quality setting (1-100)
-   int frameStart;                     /// First number of frame output counter
    MMAL_FOURCC_T encoding;             /// Encoding to use for the output file.
    int timelapse;                      /// Delay between each picture in timelapse mode. If 0, disable timelapse
    int fullResPreview;                 /// If set, the camera preview port runs at capture resolution. Reduces fps.
    int frameNextMethod;                /// Which method to use to advance to next frame
-   int useGL;                          /// Render preview using OpenGL
-   int glCapture;                      /// Save the GL frame-buffer instead of camera output
    int restart_interval;               /// JPEG restart interval. 0 for none.
 
    RASPIPREVIEW_PARAMETERS preview_parameters;    /// Preview setup parameters
@@ -128,19 +125,15 @@ typedef struct
 enum
 {
    CommandTimeout,
-   CommandTimelapse,
    CommandFullResPreview,
    CommandGL,
-   CommandGLCapture,
 };
 
 static COMMAND_LIST cmdline_commands[] =
 {
    { CommandTimeout, "-timeout",    "t",  "Time (in ms) before takes picture and shuts down (if not specified, set to 5s)", 1 },
-   { CommandTimelapse,"-timelapse", "tl", "Timelapse mode. Takes a picture every <t>ms. %d == frame number (Try: -o img_%04d.jpg)", 1},
    { CommandFullResPreview,"-fullpreview","fp", "Run the preview using the still capture resolution (may reduce preview fps)", 0},
    { CommandGL,      "-gl",         "g",  "Draw preview to texture instead of using video render component", 0},
-   { CommandGLCapture, "-glcapture","gc", "Capture the GL frame-buffer instead of the camera image", 0},
 };
 
 static int cmdline_commands_size = sizeof(cmdline_commands) / sizeof(cmdline_commands[0]);
@@ -160,7 +153,6 @@ static void default_status(RASPISTILL_STATE *state)
 
    state->timeout = -1; // replaced with 5000ms later if unset
    state->quality = 85;
-   state->frameStart = 0;
    state->camera_component = NULL;
    state->encoder_component = NULL;
    state->preview_connection = NULL;
@@ -170,8 +162,6 @@ static void default_status(RASPISTILL_STATE *state)
    state->timelapse = 0;
    state->fullResPreview = 0;
    state->frameNextMethod = FRAME_NEXT_SINGLE;
-   state->useGL = 0;
-   state->glCapture = 0;
    state->restart_interval = 0;
 
    // Setup preview window defaults
@@ -281,30 +271,8 @@ static int parse_cmdline(int argc, const char **argv, RASPISTILL_STATE *state)
          break;
       }
 
-      case CommandTimelapse:
-         if (sscanf(argv[i + 1], "%u", &state->timelapse) != 1)
-            valid = 0;
-         else
-         {
-            if (state->timelapse)
-               state->frameNextMethod = FRAME_NEXT_TIMELAPSE;
-            else
-               state->frameNextMethod = FRAME_NEXT_IMMEDIATELY;
-
-            i++;
-         }
-         break;
-
       case CommandFullResPreview:
          state->fullResPreview = 1;
-         break;
-
-      case CommandGL:
-         state->useGL = 1;
-         break;
-
-      case CommandGLCapture:
-         state->glCapture = 1;
          break;
 
       default:
@@ -367,11 +335,8 @@ static int parse_cmdline(int argc, const char **argv, RASPISTILL_STATE *state)
 
 /**
  * Create the camera component, set up its ports
- *
  * @param state Pointer to state control struct. camera_component member set to the created camera_component if successful.
- *
  * @return MMAL_SUCCESS if all OK, something else otherwise
- *
  */
 static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
 {
@@ -478,21 +443,12 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
    }
 
    status = mmal_port_format_commit(preview_port);
-   if (status != MMAL_SUCCESS)
-   {
-      vcos_log_error("camera viewfinder format couldn't be set");
-      goto error;
-   }
+   assert(status == MMAL_SUCCESS);
 
    // Set the same format on the video  port (which we don't use here)
    mmal_format_full_copy(video_port->format, format);
    status = mmal_port_format_commit(video_port);
-
-   if (status  != MMAL_SUCCESS)
-   {
-      vcos_log_error("camera video format couldn't be set");
-      goto error;
-   }
+   assert(status == MMAL_SUCCESS);
 
    // Ensure there are enough buffers to avoid dropping frames
    if (video_port->buffer_num < VIDEO_OUTPUT_BUFFERS_NUM)
@@ -526,12 +482,7 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
    format->es->video.frame_rate.den = STILLS_FRAME_RATE_DEN;
 
    status = mmal_port_format_commit(still_port);
-
-   if (status != MMAL_SUCCESS)
-   {
-      vcos_log_error("camera still format couldn't be set");
-      goto error;
-   }
+   assert(status == MMAL_SUCCESS);
 
    /* Ensure there are enough buffers to avoid dropping frames */
    if (still_port->buffer_num < VIDEO_OUTPUT_BUFFERS_NUM)
@@ -539,23 +490,10 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
 
    /* Enable component */
    status = mmal_component_enable(camera);
+   assert(status == MMAL_SUCCESS);
 
-   if (status != MMAL_SUCCESS)
-   {
-      vcos_log_error("camera component couldn't be enabled");
-      goto error;
-   }
-
-   if (state->useGL)
-   {
-      status = raspitex_configure_preview_port(&state->raspitex_state, preview_port);
-      if (status != MMAL_SUCCESS)
-      {
-         fprintf(stderr, "Failed to configure preview port for GL rendering");
-         goto error;
-      }
-   }
-
+   status = raspitex_configure_preview_port(&state->raspitex_state, preview_port);
+   assert(status == MMAL_SUCCESS);
    state->camera_component = camera;
 
    if (state->common_settings.verbose)
@@ -772,16 +710,13 @@ int rs_init(int argc, const char **argv)
    // Now connect the camera to the encoder
    status = connect_ports(camera_still_port, encoder_input_port, &rstate.encoder_connection);
    assert (status == MMAL_SUCCESS);
-      
    // Set up our userdata - this is passed though to the callback where we need the information. Null until we open our filename
    callback_data.file_handle = NULL;
    callback_data.pstate = &rstate;
-
    // vcos_status = vcos_semaphore_create(&callback_data.complete_semaphore, "RaspiStill-sem", 0);
    vcos_assert(vcos_semaphore_create(&callback_data.complete_semaphore, "RaspiStill-sem", 0) == VCOS_SUCCESS);
-
    // If GL preview is requested then start the GL threads
-   if (rstate.useGL && (raspitex_start(&rstate.raspitex_state) != 0))
+   if(raspitex_start(&rstate.raspitex_state) != 0)
      return -1;
 }
 
@@ -802,10 +737,8 @@ int rs_teardown()
    if (rstate.common_settings.verbose)
      fprintf(stderr, "Closing down\n");
    
-   if (rstate.useGL) {
-     raspitex_stop(&rstate.raspitex_state);
-     raspitex_destroy(&rstate.raspitex_state);
-   }
+   raspitex_stop(&rstate.raspitex_state);
+   raspitex_destroy(&rstate.raspitex_state);
    
    // Disable all our ports that are not handled by connections
    check_disable_port(camera_video_port);
