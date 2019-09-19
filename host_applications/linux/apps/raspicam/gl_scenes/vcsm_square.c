@@ -104,14 +104,6 @@ static GLfloat quad_varray[] = {
    -1.0f, 1.0f, 1.0f, 1.0f, -1.0f, -1.0f,
 };
 
-static GLfloat line_varray[] =
-{
-  -0.1f, -0.1f,
-  -0.1f, 0.1f,
-   0.1f, 0.1f,
-   0.1f, -0.1f,
-};
-
 static GLuint quad_vbo;
 static GLuint line_vbo;
 
@@ -135,6 +127,18 @@ static const EGLint vcsm_square_egl_config_attribs[] =
     EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
     EGL_NONE
 };
+
+static GLfloat line_varray[] =
+{
+  -0.1f, -0.1f,
+  -0.1f, 0.1f,
+   0.1f, 0.1f,
+   0.1f, -0.1f,
+};
+
+void set_rectangel(int x, int y, int width, int height)
+{
+}
 
 void init_vcsm_rectangle()
 {

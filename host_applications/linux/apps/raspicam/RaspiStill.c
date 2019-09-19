@@ -75,10 +75,7 @@ enum
 {
    FRAME_NEXT_SINGLE,
    FRAME_NEXT_TIMELAPSE,
-   FRAME_NEXT_KEYPRESS,
    FRAME_NEXT_FOREVER,
-   FRAME_NEXT_GPIO,
-   FRAME_NEXT_SIGNAL,
    FRAME_NEXT_IMMEDIATELY
 };
 
@@ -93,21 +90,13 @@ typedef struct
    RASPICOMMONSETTINGS_PARAMETERS common_settings;     /// Common settings
    int timeout;                        /// Time taken before frame is grabbed and app then shuts down. Units are milliseconds
    int quality;                        /// JPEG quality setting (1-100)
-   int wantRAW;                        /// Flag for whether the JPEG metadata also contains the RAW bayer image
-   char *linkname;                     /// filename of output file
    int frameStart;                     /// First number of frame output counter
-   MMAL_PARAM_THUMBNAIL_CONFIG_T thumbnailConfig;
-   int demoMode;                       /// Run app in demo mode
-   int demoInterval;                   /// Interval between camera settings changes
    MMAL_FOURCC_T encoding;             /// Encoding to use for the output file.
    int timelapse;                      /// Delay between each picture in timelapse mode. If 0, disable timelapse
    int fullResPreview;                 /// If set, the camera preview port runs at capture resolution. Reduces fps.
    int frameNextMethod;                /// Which method to use to advance to next frame
    int useGL;                          /// Render preview using OpenGL
    int glCapture;                      /// Save the GL frame-buffer instead of camera output
-   int burstCaptureMode;               /// Enable burst mode
-   int datetime;                       /// Use DateTime instead of frame#
-   int timestamp;                      /// Use timestamp instead of frame#
    int restart_interval;               /// JPEG restart interval. 0 for none.
 
    RASPIPREVIEW_PARAMETERS preview_parameters;    /// Preview setup parameters
@@ -138,82 +127,24 @@ typedef struct
 /// Command ID's and Structure defining our command line options
 enum
 {
-   CommandQuality,
-   CommandRaw,
    CommandTimeout,
-   CommandThumbnail,
-   CommandDemoMode,
-   CommandEncoding,
    CommandTimelapse,
    CommandFullResPreview,
-   CommandLink,
-   CommandKeypress,
-   CommandSignal,
    CommandGL,
    CommandGLCapture,
-   CommandBurstMode,
-   CommandDateTime,
-   CommandTimeStamp,
-   CommandFrameStart,
-   CommandRestartInterval,
 };
 
 static COMMAND_LIST cmdline_commands[] =
 {
-   { CommandQuality, "-quality",    "q",  "Set jpeg quality <0 to 100>", 1 },
-   { CommandRaw,     "-raw",        "r",  "Add raw bayer data to jpeg metadata", 0 },
-   { CommandLink,    "-latest",     "l",  "Link latest complete image to filename <filename>", 1},
    { CommandTimeout, "-timeout",    "t",  "Time (in ms) before takes picture and shuts down (if not specified, set to 5s)", 1 },
-   { CommandThumbnail,"-thumb",     "th", "Set thumbnail parameters (x:y:quality) or none", 1},
-   { CommandDemoMode,"-demo",       "d",  "Run a demo mode (cycle through range of camera options, no capture)", 0},
-   { CommandEncoding,"-encoding",   "e",  "Encoding to use for output file (jpg, bmp, gif, png)", 1},
    { CommandTimelapse,"-timelapse", "tl", "Timelapse mode. Takes a picture every <t>ms. %d == frame number (Try: -o img_%04d.jpg)", 1},
    { CommandFullResPreview,"-fullpreview","fp", "Run the preview using the still capture resolution (may reduce preview fps)", 0},
-   { CommandKeypress,"-keypress",   "k",  "Wait between captures for a ENTER, X then ENTER to exit", 0},
-   { CommandSignal,  "-signal",     "s",  "Wait between captures for a SIGUSR1 or SIGUSR2 from another process", 0},
    { CommandGL,      "-gl",         "g",  "Draw preview to texture instead of using video render component", 0},
    { CommandGLCapture, "-glcapture","gc", "Capture the GL frame-buffer instead of the camera image", 0},
-   { CommandBurstMode, "-burst",    "bm", "Enable 'burst capture mode'", 0},
-   { CommandDateTime,  "-datetime",  "dt", "Replace output pattern (%d) with DateTime (MonthDayHourMinSec)", 0},
-   { CommandTimeStamp, "-timestamp", "ts", "Replace output pattern (%d) with unix timestamp (seconds since 1970)", 0},
-   { CommandFrameStart,"-framestart","fs",  "Starting frame number in output pattern(%d)", 1},
-   { CommandRestartInterval, "-restart","rs","JPEG Restart interval (default of 0 for none)", 1},
 };
 
 static int cmdline_commands_size = sizeof(cmdline_commands) / sizeof(cmdline_commands[0]);
 
-static struct
-{
-   char *format;
-   MMAL_FOURCC_T encoding;
-} encoding_xref[] =
-{
-   {"jpg", MMAL_ENCODING_JPEG},
-   {"bmp", MMAL_ENCODING_BMP},
-   {"gif", MMAL_ENCODING_GIF},
-   {"png", MMAL_ENCODING_PNG},
-   {"ppm", MMAL_ENCODING_PPM},
-   {"tga", MMAL_ENCODING_TGA}
-};
-
-static int encoding_xref_size = sizeof(encoding_xref) / sizeof(encoding_xref[0]);
-
-
-static struct
-{
-   char *description;
-   int nextFrameMethod;
-} next_frame_description[] =
-{
-   {"Single capture",         FRAME_NEXT_SINGLE},
-   {"Capture on timelapse",   FRAME_NEXT_TIMELAPSE},
-   {"Capture on keypress",    FRAME_NEXT_KEYPRESS},
-   {"Run forever",            FRAME_NEXT_FOREVER},
-   {"Capture on GPIO",        FRAME_NEXT_GPIO},
-   {"Capture on signal",      FRAME_NEXT_SIGNAL},
-};
-
-static int next_frame_description_size = sizeof(next_frame_description) / sizeof(next_frame_description[0]);
 
 
 /**
@@ -229,15 +160,7 @@ static void default_status(RASPISTILL_STATE *state)
 
    state->timeout = -1; // replaced with 5000ms later if unset
    state->quality = 85;
-   state->wantRAW = 0;
-   state->linkname = NULL;
    state->frameStart = 0;
-   state->thumbnailConfig.enable = 1;
-   state->thumbnailConfig.width = 64;
-   state->thumbnailConfig.height = 48;
-   state->thumbnailConfig.quality = 35;
-   state->demoMode = 0;
-   state->demoInterval = 250; // ms
    state->camera_component = NULL;
    state->encoder_component = NULL;
    state->preview_connection = NULL;
@@ -249,9 +172,6 @@ static void default_status(RASPISTILL_STATE *state)
    state->frameNextMethod = FRAME_NEXT_SINGLE;
    state->useGL = 0;
    state->glCapture = 0;
-   state->burstCaptureMode=0;
-   state->datetime = 0;
-   state->timestamp = 0;
    state->restart_interval = 0;
 
    // Setup preview window defaults
@@ -281,29 +201,9 @@ static void dump_status(RASPISTILL_STATE *state)
 
    raspicommonsettings_dump_parameters(&state->common_settings);
 
-   fprintf(stderr, "Quality %d, Raw %s\n", state->quality, state->wantRAW ? "yes" : "no");
-   fprintf(stderr, "Thumbnail enabled %s, width %d, height %d, quality %d\n",
-           state->thumbnailConfig.enable ? "Yes":"No", state->thumbnailConfig.width,
-           state->thumbnailConfig.height, state->thumbnailConfig.quality);
-
    fprintf(stderr, "Time delay %d, Timelapse %d\n", state->timeout, state->timelapse);
-   fprintf(stderr, "Link to latest frame enabled ");
-   if (state->linkname)
-   {
-      fprintf(stderr, " yes, -> %s\n", state->linkname);
-   }
-   else
-   {
-      fprintf(stderr, " no\n");
-   }
    fprintf(stderr, "Full resolution preview %s\n", state->fullResPreview ? "Yes": "No");
 
-   fprintf(stderr, "Capture method : ");
-   for (i=0; i<next_frame_description_size; i++)
-   {
-      if (state->frameNextMethod == next_frame_description[i].nextFrameMethod)
-         fprintf(stderr, "%s", next_frame_description[i].description);
-   }
    fprintf(stderr, "\n\n");
 
    raspipreview_dump_parameters(&state->preview_parameters);
@@ -319,13 +219,9 @@ static void application_help_message(char *app_name)
 {
    fprintf(stdout, "Runs camera for specific time, and take JPG capture at end if requested\n\n");
    fprintf(stdout, "usage: %s [options]\n\n", app_name);
-
    fprintf(stdout, "Image parameter commands\n\n");
-
    raspicli_display_help(cmdline_commands, cmdline_commands_size);
-
    raspitex_display_help();
-
    return;
 }
 
@@ -370,60 +266,6 @@ static int parse_cmdline(int argc, const char **argv, RASPISTILL_STATE *state)
       //  We are now dealing with a command line option
       switch (command_id)
       {
-      case CommandQuality: // Quality = 1-100
-         if (sscanf(argv[i + 1], "%u", &state->quality) == 1)
-         {
-            if (state->quality > 100)
-            {
-               fprintf(stderr, "Setting max quality = 100\n");
-               state->quality = 100;
-            }
-            i++;
-         }
-         else
-            valid = 0;
-         break;
-
-      case CommandRaw: // Add raw bayer data in metadata
-         state->wantRAW = 1;
-         break;
-
-      case CommandLink :
-      {
-         int len = strlen(argv[i+1]);
-         if (len)
-         {
-            state->linkname = malloc(len + 10);
-            vcos_assert(state->linkname);
-            if (state->linkname)
-               strncpy(state->linkname, argv[i + 1], len+1);
-            i++;
-         }
-         else
-            valid = 0;
-         break;
-
-      }
-
-      case CommandFrameStart:  // use a staring value != 0
-      {
-         if (sscanf(argv[i + 1], "%d", &state->frameStart) == 1)
-         {
-            i++;
-         }
-         else
-            valid = 0;
-         break;
-      }
-
-      case CommandDateTime: // use datetime
-         state->datetime = 1;
-         break;
-
-      case CommandTimeStamp: // use timestamp
-         state->timestamp = 1;
-         break;
-
       case CommandTimeout: // Time to run viewfinder for before taking picture, in seconds
       {
          if (sscanf(argv[i + 1], "%d", &state->timeout) == 1)
@@ -436,66 +278,6 @@ static int parse_cmdline(int argc, const char **argv, RASPISTILL_STATE *state)
          }
          else
             valid = 0;
-         break;
-      }
-
-      case CommandThumbnail : // thumbnail parameters - needs string "x:y:quality"
-         if ( strcmp( argv[ i + 1 ], "none" ) == 0 )
-         {
-            state->thumbnailConfig.enable = 0;
-         }
-         else
-         {
-            sscanf(argv[i + 1], "%d:%d:%d",
-                   &state->thumbnailConfig.width,
-                   &state->thumbnailConfig.height,
-                   &state->thumbnailConfig.quality);
-         }
-         i++;
-         break;
-
-      case CommandDemoMode: // Run in demo mode - no capture
-      {
-         // Demo mode might have a timing parameter
-         // so check if a) we have another parameter, b) its not the start of the next option
-         if (i + 1 < argc  && argv[i+1][0] != '-')
-         {
-            if (sscanf(argv[i + 1], "%u", &state->demoInterval) == 1)
-            {
-               // TODO : What limits do we need for timeout?
-               state->demoMode = 1;
-               i++;
-            }
-            else
-               valid = 0;
-         }
-         else
-         {
-            state->demoMode = 1;
-         }
-
-         break;
-      }
-
-      case CommandEncoding :
-      {
-         int len = strlen(argv[i + 1]);
-         valid = 0;
-
-         if (len)
-         {
-            int j;
-            for (j=0; j<encoding_xref_size; j++)
-            {
-               if (strcmp(encoding_xref[j].format, argv[i+1]) == 0)
-               {
-                  state->encoding = encoding_xref[j].encoding;
-                  valid = 1;
-                  i++;
-                  break;
-               }
-            }
-         }
          break;
       }
 
@@ -517,25 +299,6 @@ static int parse_cmdline(int argc, const char **argv, RASPISTILL_STATE *state)
          state->fullResPreview = 1;
          break;
 
-      case CommandKeypress: // Set keypress between capture mode
-         state->frameNextMethod = FRAME_NEXT_KEYPRESS;
-
-         if (state->timeout == -1)
-            state->timeout = 0;
-
-         break;
-
-      case CommandSignal:   // Set SIGUSR1 & SIGUSR2 between capture mode
-         state->frameNextMethod = FRAME_NEXT_SIGNAL;
-         // Reenable the signal
-         signal(SIGUSR1, default_signal_handler);
-         signal(SIGUSR2, default_signal_handler);
-
-         if (state->timeout == -1)
-            state->timeout = 0;
-
-         break;
-
       case CommandGL:
          state->useGL = 1;
          break;
@@ -543,21 +306,6 @@ static int parse_cmdline(int argc, const char **argv, RASPISTILL_STATE *state)
       case CommandGLCapture:
          state->glCapture = 1;
          break;
-
-      case CommandBurstMode:
-         state->burstCaptureMode=1;
-         break;
-
-      case CommandRestartInterval:
-      {
-         if (sscanf(argv[i + 1], "%u", &state->restart_interval) == 1)
-         {
-            i++;
-         }
-         else
-            valid = 0;
-         break;
-      }
 
       default:
       {
