@@ -1,6 +1,3 @@
-/*
-*/
-
 /**
  * Command line program to capture a still frame and encode it to file.
  * Also optionally display a preview/viewfinder of current camera input.
@@ -89,7 +86,6 @@ typedef struct
 {
    RASPICOMMONSETTINGS_PARAMETERS common_settings;     /// Common settings
    int timeout;                        /// Time taken before frame is grabbed and app then shuts down. Units are milliseconds
-   int quality;                        /// JPEG quality setting (1-100)
    MMAL_FOURCC_T encoding;             /// Encoding to use for the output file.
    int timelapse;                      /// Delay between each picture in timelapse mode. If 0, disable timelapse
    int fullResPreview;                 /// If set, the camera preview port runs at capture resolution. Reduces fps.
@@ -100,25 +96,12 @@ typedef struct
    RASPICAM_CAMERA_PARAMETERS camera_parameters; /// Camera setup parameters
 
    MMAL_COMPONENT_T *camera_component;    /// Pointer to the camera component
-   MMAL_COMPONENT_T *encoder_component;   /// Pointer to the encoder component
    MMAL_COMPONENT_T *null_sink_component; /// Pointer to the null sink component
-   MMAL_CONNECTION_T *preview_connection; /// Pointer to the connection from camera to preview
-   MMAL_CONNECTION_T *encoder_connection; /// Pointer to the connection from camera to encoder
-
-   MMAL_POOL_T *encoder_pool; /// Pointer to the pool of buffers used by encoder output port
 
    RASPITEX_STATE raspitex_state; /// GL renderer state and parameters
 
 } RASPISTILL_STATE;
 
-/** Struct used to pass information in encoder port userdata to callback
- */
-typedef struct
-{
-   FILE *file_handle;                   /// File handle to write buffer data to.
-   VCOS_SEMAPHORE_T complete_semaphore; /// semaphore which is posted when we reach end of frame (indicates end of capture or fault)
-   RASPISTILL_STATE *pstate;            /// pointer to our state in case required in callback
-} PORT_USERDATA;
 
 
 /// Command ID's and Structure defining our command line options
@@ -141,8 +124,6 @@ static int cmdline_commands_size = sizeof(cmdline_commands) / sizeof(cmdline_com
 
 
 /**
- * Assign a default set of parameters to the state passed in
- *
  * @param state Pointer to state structure to assign defaults to
  */
 static void default_status(RASPISTILL_STATE *state)
@@ -152,12 +133,7 @@ static void default_status(RASPISTILL_STATE *state)
    raspicommonsettings_set_defaults(&state->common_settings);
 
    state->timeout = -1; // replaced with 5000ms later if unset
-   state->quality = 85;
    state->camera_component = NULL;
-   state->encoder_component = NULL;
-   state->preview_connection = NULL;
-   state->encoder_connection = NULL;
-   state->encoder_pool = NULL;
    state->encoding = MMAL_ENCODING_JPEG;
    state->timelapse = 0;
    state->fullResPreview = 0;
@@ -470,7 +446,9 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
       };
       mmal_port_parameter_set(still_port, &fps_range.hdr);
    }
+
    // Set our stills format on the stills (for encoder) port
+   /*
    format->encoding = MMAL_ENCODING_OPAQUE;
    format->es->video.width = VCOS_ALIGN_UP(state->common_settings.width, 32);
    format->es->video.height = VCOS_ALIGN_UP(state->common_settings.height, 16);
@@ -483,7 +461,8 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
 
    status = mmal_port_format_commit(still_port);
    assert(status == MMAL_SUCCESS);
-
+   */
+   
    /* Ensure there are enough buffers to avoid dropping frames */
    if (still_port->buffer_num < VIDEO_OUTPUT_BUFFERS_NUM)
       still_port->buffer_num = VIDEO_OUTPUT_BUFFERS_NUM;
@@ -524,83 +503,6 @@ static void destroy_camera_component(RASPISTILL_STATE *state)
    }
 }
 
-/**
- * Create the encoder component, set up its ports
- *
- * @param state Pointer to state control struct. encoder_component member set to the created camera_component if successful.
- *
- * @return a MMAL_STATUS, MMAL_SUCCESS if all OK, something else otherwise
- */
-static MMAL_STATUS_T create_encoder_component(RASPISTILL_STATE *state)
-{
-   MMAL_COMPONENT_T *encoder = 0;
-   MMAL_PORT_T *encoder_input = NULL, *encoder_output = NULL;
-   MMAL_STATUS_T status;
-   MMAL_POOL_T *pool;
-
-   status = mmal_component_create(MMAL_COMPONENT_DEFAULT_IMAGE_ENCODER, &encoder);
-   assert(status == MMAL_SUCCESS);
-   assert( encoder->input_num && encoder->output_num); //vcos_log_error("JPEG encoder doesn't have input/output ports");
-   encoder_input = encoder->input[0];
-   encoder_output = encoder->output[0];
-   // We want same format on input and output
-   mmal_format_copy(encoder_output->format, encoder_input->format);
-   // Specify out output format
-   encoder_output->format->encoding = state->encoding;
-
-   encoder_output->buffer_size = encoder_output->buffer_size_recommended;
-   if (encoder_output->buffer_size < encoder_output->buffer_size_min)
-      encoder_output->buffer_size = encoder_output->buffer_size_min;
-
-   encoder_output->buffer_num = encoder_output->buffer_num_recommended;
-
-   if (encoder_output->buffer_num < encoder_output->buffer_num_min)
-      encoder_output->buffer_num = encoder_output->buffer_num_min;
-
-   status = mmal_port_format_commit(encoder_output);     // Commit the port changes to the output port
-   assert(status == MMAL_SUCCESS);
-      // Set the JPEG quality level
-   status = mmal_port_parameter_set_uint32(encoder_output, MMAL_PARAMETER_JPEG_Q_FACTOR, state->quality);
-   assert(status == MMAL_SUCCESS);
-   // Set the JPEG restart interval
-   status = mmal_port_parameter_set_uint32(encoder_output, MMAL_PARAMETER_JPEG_RESTART_INTERVAL, state->restart_interval);
-   if (state->restart_interval && status != MMAL_SUCCESS) {
-      vcos_log_error("Unable to set JPEG restart interval");
-      assert(0);
-   }
-
-   status = mmal_component_enable(encoder);    //  Enable component
-   assert(status == MMAL_SUCCESS);
-
-   /* Create pool of buffer headers for the output port to consume */
-   pool = mmal_port_pool_create(encoder_output, encoder_output->buffer_num, encoder_output->buffer_size);
-   assert (pool);
-   state->encoder_pool = pool;
-   state->encoder_component = encoder;
-
-   return status;
-}
-
-/**
- * Destroy the encoder component
- *
- * @param state Pointer to state control struct
- *
- */
-static void destroy_encoder_component(RASPISTILL_STATE *state)
-{
-   // Get rid of any port buffers first
-   if (state->encoder_pool)
-   {
-      mmal_port_pool_destroy(state->encoder_component->output[0], state->encoder_pool);
-   }
-
-   if (state->encoder_component)
-   {
-      mmal_component_destroy(state->encoder_component);
-      state->encoder_component = NULL;
-   }
-}
 
 /**
  * Function to wait in various ways (depending on settings) for the next frame
@@ -648,9 +550,6 @@ MMAL_PORT_T *camera_preview_port = NULL;
 MMAL_PORT_T *camera_video_port = NULL;
 MMAL_PORT_T *camera_still_port = NULL;
 MMAL_PORT_T *preview_input_port = NULL;
-MMAL_PORT_T *encoder_input_port = NULL;
-MMAL_PORT_T *encoder_output_port = NULL;
-PORT_USERDATA callback_data;
 
 
 int rs_init(int argc, const char **argv)
@@ -693,7 +592,6 @@ int rs_init(int argc, const char **argv)
    // OK, we have a nice set of parameters. Now set up our components. We have 3 components. Camera, Preview and encoder.
    // Camera and encoder are different in stills/video, but preview is the same so handed off to a separate module
    assert ((status = create_camera_component(&rstate)) == MMAL_SUCCESS);
-   assert ((status = create_encoder_component(&rstate)) == MMAL_SUCCESS);
 
    if (rstate.common_settings.verbose)
      fprintf(stderr, "Starting component connection stage\n");
@@ -701,21 +599,7 @@ int rs_init(int argc, const char **argv)
    camera_preview_port = rstate.camera_component->output[MMAL_CAMERA_PREVIEW_PORT];
    camera_video_port   = rstate.camera_component->output[MMAL_CAMERA_VIDEO_PORT];
    camera_still_port   = rstate.camera_component->output[MMAL_CAMERA_CAPTURE_PORT];
-   encoder_input_port  = rstate.encoder_component->input[0];
-   encoder_output_port = rstate.encoder_component->output[0];
 
-   if (rstate.common_settings.verbose)
-     fprintf(stderr, "Connecting camera stills port to encoder input port\n");
-
-   // Now connect the camera to the encoder
-   status = connect_ports(camera_still_port, encoder_input_port, &rstate.encoder_connection);
-   assert (status == MMAL_SUCCESS);
-   // Set up our userdata - this is passed though to the callback where we need the information. Null until we open our filename
-   callback_data.file_handle = NULL;
-   callback_data.pstate = &rstate;
-   // vcos_status = vcos_semaphore_create(&callback_data.complete_semaphore, "RaspiStill-sem", 0);
-   vcos_assert(vcos_semaphore_create(&callback_data.complete_semaphore, "RaspiStill-sem", 0) == VCOS_SUCCESS);
-   // If GL preview is requested then start the GL threads
    if(raspitex_start(&rstate.raspitex_state) != 0)
      return -1;
 }
@@ -730,8 +614,6 @@ void begin_loop()
 
 int rs_teardown()
 {
-  vcos_semaphore_delete(&callback_data.complete_semaphore);
-
   //   mmal_status_to_int(status);
 
    if (rstate.common_settings.verbose)
@@ -741,26 +623,11 @@ int rs_teardown()
    raspitex_destroy(&rstate.raspitex_state);
    
    // Disable all our ports that are not handled by connections
-   check_disable_port(camera_video_port);
-   check_disable_port(encoder_output_port);
-   
-   if (rstate.preview_connection)
-     mmal_connection_destroy(rstate.preview_connection);
-   
-   if (rstate.encoder_connection)
-     mmal_connection_destroy(rstate.encoder_connection);
-   
-   /* Disable components */
-   if (rstate.encoder_component)
-     mmal_component_disable(rstate.encoder_component);
-   
-   if (rstate.preview_parameters.preview_component)
-     mmal_component_disable(rstate.preview_parameters.preview_component);
+   check_disable_port(camera_video_port);   
    
    if (rstate.camera_component)
      mmal_component_disable(rstate.camera_component);
    
-   destroy_encoder_component(&rstate);
    raspipreview_destroy(&rstate.preview_parameters);
    destroy_camera_component(&rstate);
    
