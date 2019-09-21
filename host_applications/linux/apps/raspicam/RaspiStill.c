@@ -84,9 +84,7 @@ typedef struct
 
    RASPIPREVIEW_PARAMETERS preview_parameters;    /// Preview setup parameters
    RASPICAM_CAMERA_PARAMETERS camera_parameters; /// Camera setup parameters
-
    MMAL_COMPONENT_T *camera_component;    /// Pointer to the camera component
-
    RASPITEX_STATE raspitex_state; /// GL renderer state and parameters
 
 } RASPISTILL_STATE;
@@ -510,8 +508,6 @@ RASPISTILL_STATE rstate;
    
 MMAL_PORT_T *camera_preview_port = NULL;
 MMAL_PORT_T *camera_video_port = NULL;
-//MMAL_PORT_T *camera_still_port = NULL;
-//MMAL_PORT_T *preview_input_port = NULL;
 
 
 int rs_init(int argc, const char **argv)
