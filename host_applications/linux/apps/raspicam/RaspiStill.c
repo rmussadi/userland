@@ -54,14 +54,9 @@
 #include <time.h>
 
 // Standard port setting for the camera component
-#define MMAL_CAMERA_PREVIEW_PORT 0
+//#define MMAL_CAMERA_PREVIEW_PORT 0
 #define MMAL_CAMERA_VIDEO_PORT 1
 #define MMAL_CAMERA_CAPTURE_PORT 2
-
-// Stills format information
-// 0 implies variable
-#define STILLS_FRAME_RATE_NUM 0
-#define STILLS_FRAME_RATE_DEN 1
 
 /// Video render needs at least 2 buffers.
 #define VIDEO_OUTPUT_BUFFERS_NUM 3
@@ -71,9 +66,7 @@
 enum
 {
    FRAME_NEXT_SINGLE,
-   FRAME_NEXT_TIMELAPSE,
    FRAME_NEXT_FOREVER,
-   FRAME_NEXT_IMMEDIATELY
 };
 
 /// Amount of time before first image taken to allow settling of
@@ -86,17 +79,13 @@ typedef struct
 {
    RASPICOMMONSETTINGS_PARAMETERS common_settings;     /// Common settings
    int timeout;                        /// Time taken before frame is grabbed and app then shuts down. Units are milliseconds
-   MMAL_FOURCC_T encoding;             /// Encoding to use for the output file.
-   int timelapse;                      /// Delay between each picture in timelapse mode. If 0, disable timelapse
    int fullResPreview;                 /// If set, the camera preview port runs at capture resolution. Reduces fps.
    int frameNextMethod;                /// Which method to use to advance to next frame
-   int restart_interval;               /// JPEG restart interval. 0 for none.
 
    RASPIPREVIEW_PARAMETERS preview_parameters;    /// Preview setup parameters
    RASPICAM_CAMERA_PARAMETERS camera_parameters; /// Camera setup parameters
 
    MMAL_COMPONENT_T *camera_component;    /// Pointer to the camera component
-   MMAL_COMPONENT_T *null_sink_component; /// Pointer to the null sink component
 
    RASPITEX_STATE raspitex_state; /// GL renderer state and parameters
 
@@ -109,14 +98,12 @@ enum
 {
    CommandTimeout,
    CommandFullResPreview,
-   CommandGL,
 };
 
 static COMMAND_LIST cmdline_commands[] =
 {
    { CommandTimeout, "-timeout",    "t",  "Time (in ms) before takes picture and shuts down (if not specified, set to 5s)", 1 },
    { CommandFullResPreview,"-fullpreview","fp", "Run the preview using the still capture resolution (may reduce preview fps)", 0},
-   { CommandGL,      "-gl",         "g",  "Draw preview to texture instead of using video render component", 0},
 };
 
 static int cmdline_commands_size = sizeof(cmdline_commands) / sizeof(cmdline_commands[0]);
@@ -134,26 +121,18 @@ static void default_status(RASPISTILL_STATE *state)
 
    state->timeout = -1; // replaced with 5000ms later if unset
    state->camera_component = NULL;
-   state->encoding = MMAL_ENCODING_JPEG;
-   state->timelapse = 0;
    state->fullResPreview = 0;
    state->frameNextMethod = FRAME_NEXT_SINGLE;
-   state->restart_interval = 0;
 
    // Setup preview window defaults
    raspipreview_set_defaults(&state->preview_parameters);
-
    // Set up the camera_parameters to default
    raspicamcontrol_set_defaults(&state->camera_parameters);
-
    // Set initial GL preview state
    raspitex_set_defaults(&state->raspitex_state);
 }
 
 /**
- * Dump image state parameters to stderr. Used for debugging
- *
- * @param state Pointer to state structure to assign defaults to
  */
 static void dump_status(RASPISTILL_STATE *state)
 {
@@ -167,10 +146,8 @@ static void dump_status(RASPISTILL_STATE *state)
 
    raspicommonsettings_dump_parameters(&state->common_settings);
 
-   fprintf(stderr, "Time delay %d, Timelapse %d\n", state->timeout, state->timelapse);
+   fprintf(stderr, "Time delay %d\n", state->timeout);
    fprintf(stderr, "Full resolution preview %s\n", state->fullResPreview ? "Yes": "No");
-
-   fprintf(stderr, "\n\n");
 
    raspipreview_dump_parameters(&state->preview_parameters);
    raspicamcontrol_dump_parameters(&state->camera_parameters);
@@ -447,22 +424,6 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
       mmal_port_parameter_set(still_port, &fps_range.hdr);
    }
 
-   // Set our stills format on the stills (for encoder) port
-   /*
-   format->encoding = MMAL_ENCODING_OPAQUE;
-   format->es->video.width = VCOS_ALIGN_UP(state->common_settings.width, 32);
-   format->es->video.height = VCOS_ALIGN_UP(state->common_settings.height, 16);
-   format->es->video.crop.x = 0;
-   format->es->video.crop.y = 0;
-   format->es->video.crop.width = state->common_settings.width;
-   format->es->video.crop.height = state->common_settings.height;
-   format->es->video.frame_rate.num = STILLS_FRAME_RATE_NUM;
-   format->es->video.frame_rate.den = STILLS_FRAME_RATE_DEN;
-
-   status = mmal_port_format_commit(still_port);
-   assert(status == MMAL_SUCCESS);
-   */
-   
    /* Ensure there are enough buffers to avoid dropping frames */
    if (still_port->buffer_num < VIDEO_OUTPUT_BUFFERS_NUM)
       still_port->buffer_num = VIDEO_OUTPUT_BUFFERS_NUM;
@@ -530,6 +491,7 @@ static int wait_for_next_frame(RASPISTILL_STATE *state, int *frame)
    {
    case FRAME_NEXT_SINGLE :
       vcos_sleep(state->timeout);  // simple timeout for a single capture
+      fprintf(stderr, "Sleep done\n");
       return 0;
 
    case FRAME_NEXT_FOREVER :
@@ -548,8 +510,8 @@ RASPISTILL_STATE rstate;
    
 MMAL_PORT_T *camera_preview_port = NULL;
 MMAL_PORT_T *camera_video_port = NULL;
-MMAL_PORT_T *camera_still_port = NULL;
-MMAL_PORT_T *preview_input_port = NULL;
+//MMAL_PORT_T *camera_still_port = NULL;
+//MMAL_PORT_T *preview_input_port = NULL;
 
 
 int rs_init(int argc, const char **argv)
@@ -598,7 +560,7 @@ int rs_init(int argc, const char **argv)
 
    camera_preview_port = rstate.camera_component->output[MMAL_CAMERA_PREVIEW_PORT];
    camera_video_port   = rstate.camera_component->output[MMAL_CAMERA_VIDEO_PORT];
-   camera_still_port   = rstate.camera_component->output[MMAL_CAMERA_CAPTURE_PORT];
+   //   camera_still_port   = rstate.camera_component->output[MMAL_CAMERA_CAPTURE_PORT];
 
    if(raspitex_start(&rstate.raspitex_state) != 0)
      return -1;
