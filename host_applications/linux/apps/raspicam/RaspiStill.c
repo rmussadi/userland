@@ -54,7 +54,7 @@
 #include <time.h>
 
 // Standard port setting for the camera component
-//#define MMAL_CAMERA_PREVIEW_PORT 0
+#define MMAL_CAMERA_PREVIEW_PORT 0
 #define MMAL_CAMERA_VIDEO_PORT 1
 #define MMAL_CAMERA_CAPTURE_PORT 2
 
@@ -71,7 +71,7 @@ enum
 
 /// Amount of time before first image taken to allow settling of
 /// exposure etc. in milliseconds.
-#define CAMERA_SETTLE_TIME       1000
+#define CAMERA_SETTLE_TIME 1000
 
 /** Structure containing all state information for the current run
  */
