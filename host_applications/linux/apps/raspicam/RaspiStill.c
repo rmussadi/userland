@@ -572,8 +572,6 @@ void begin_loop()
 
 int rs_teardown()
 {
-  //   mmal_status_to_int(status);
-
    if (rstate.common_settings.verbose)
      fprintf(stderr, "Closing down\n");
    
@@ -592,9 +590,6 @@ int rs_teardown()
    if (rstate.common_settings.verbose)
      fprintf(stderr, "Close down completed, all components disconnected, disabled and destroyed\n\n");
 
-   //if (status != MMAL_SUCCESS)
-   //  raspicamcontrol_check_configuration(128);
-   
    return EX_OK;
 }
 
@@ -606,3 +601,15 @@ int callmeback(callback_type t)
    t(2.0,1.0, buffer);
 }
 
+int start_video(int x, int y, int w, int h, int duration)
+{
+    rs_init();
+    begin_loop();  
+    rs_teardown();
+    return 0;
+}
+
+int draw_rect(int x, int y, int w, int h)
+{
+  return 0;
+}
