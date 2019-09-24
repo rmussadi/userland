@@ -190,4 +190,6 @@ int raspitex_parse_cmdline(RASPITEX_STATE *state,
                            const char *arg1, const char *arg2);
 int raspitex_capture(RASPITEX_STATE *state, FILE* output_file);
 
+void raspitex_set_window(RASPITEX_STATE *state, int32_t x, int32_t y, int32_t width, int32_t height);
+
 #endif /* RASPITEX_H_ */

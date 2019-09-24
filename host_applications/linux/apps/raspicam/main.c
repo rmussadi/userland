@@ -39,10 +39,7 @@
  */
 int main(int argc, const char **argv)
 {
-    rs_init(argc, argv);
-    begin_loop();  
-    rs_teardown();
-   
+    start_video(0,0,1024,1024, 10000);
     return EX_OK;
 }
 

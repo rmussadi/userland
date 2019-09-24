@@ -175,6 +175,14 @@ int raspitex_parse_cmdline(RASPITEX_STATE *state,
    return used;
 }
 
+void raspitex_set_window(RASPITEX_STATE *state, int32_t x, int32_t y, int32_t width, int32_t height)
+{
+  state->x = x;
+  state->y = y;
+  state->width = width;
+  state->height = height;
+}
+
 /**
  * Display help for command line options
  */
@@ -648,7 +656,7 @@ void raspitex_set_defaults(RASPITEX_STATE *state)
    state->opacity = 255;
    state->width = DEFAULT_WIDTH;
    state->height = DEFAULT_HEIGHT;
-   state->scene_id = RASPITEX_SCENE_SQUARE;
+   state->scene_id = RASPITEX_SCENE_VCSM_SQUARE;
 
    state->ops.create_native_window = raspitexutil_create_native_window;
    state->ops.gl_init = raspitexutil_gl_init_1_0;
