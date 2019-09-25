@@ -427,7 +427,9 @@ int start_video(int x, int y, int w, int h, int duration)
     return 0;
 }
 
-int draw_rect(int x, int y, int w, int h)
+// Specified in screen-coords where (0,0) is upper left corner
+int draw_rect(int x, int y, int w, int h)  // must be wrt to current window size
 {
-  return 0;
+    set_rectangle(&rstate.raspitex_state, x,y,w,h)
+    return 0;
 }

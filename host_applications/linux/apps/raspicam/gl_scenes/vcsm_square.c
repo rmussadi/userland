@@ -136,8 +136,10 @@ static GLfloat line_varray[] =
    0.1f, -0.1f,
 };
 
-void set_rectangel(int x, int y, int width, int height)
+void set_rectangle(RASPITEX_STATE *state, int x, int y, int width, int height)
 {
+  int ndcx1 = 2*(x/state->width) - 1;
+  int ndcy1 = 2*(x/state->width);
 }
 
 void init_vcsm_rectangle()

@@ -181,6 +181,7 @@ void raspitex_set_window(RASPITEX_STATE *state, int32_t x, int32_t y, int32_t wi
   state->y = y;
   state->width = width;
   state->height = height;
+  state->gl_win_defined = 1;
 }
 
 /**
