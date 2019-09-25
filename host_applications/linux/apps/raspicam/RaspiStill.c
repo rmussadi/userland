@@ -371,26 +371,6 @@ int callmeback(callback_type t)
    t(2.0,1.0, buffer);
 }
 
-static void set_window(int32_t x, int32_t y, int32_t width, int32_t height)
-{
-   raspitex_set_window(&rstate.raspitex_state, x, y, width, height);
-   /* GL preview parameters use preview parameters as defaults unless overriden */
-   if (! rstate.raspitex_state.gl_win_defined)
-   {
-      rstate.raspitex_state.x       = rstate.preview_parameters.previewWindow.x;
-      rstate.raspitex_state.y       = rstate.preview_parameters.previewWindow.y;
-      rstate.raspitex_state.width   = rstate.preview_parameters.previewWindow.width;
-      rstate.raspitex_state.height  = rstate.preview_parameters.previewWindow.height;
-   }
-   /* Also pass the preview information through so GL renderer can determine
-    * the real resolution of the multi-media image */
-   rstate.raspitex_state.preview_x       = rstate.preview_parameters.previewWindow.x;
-   rstate.raspitex_state.preview_y       = rstate.preview_parameters.previewWindow.y;
-   rstate.raspitex_state.preview_width   = rstate.preview_parameters.previewWindow.width;
-   rstate.raspitex_state.preview_height  = rstate.preview_parameters.previewWindow.height;
-   rstate.raspitex_state.opacity         = rstate.preview_parameters.opacity;
-}
-
 static void set_timeout(int duration)
 {
    rstate.timeout = duration;
@@ -409,7 +389,7 @@ int start_video(int x, int y, int w, int h, int duration)
     get_sensor_defaults(rstate.common_settings.cameraNum, rstate.common_settings.camera_name,
 			&rstate.common_settings.width, &rstate.common_settings.height);
     set_timeout(duration);
-    set_window(x,y,w,h);
+    raspitex_set_window(&rstate.raspitex_state, x, y, w, h);
 
     raspitex_init(&rstate.raspitex_state);
     // OK, we have a nice set of parameters. Now set up our components. We have 3 components. Camera, Preview and encoder.
@@ -427,9 +407,11 @@ int start_video(int x, int y, int w, int h, int duration)
     return 0;
 }
 
+extern void set_rectangle(RASPITEX_STATE *state, int x, int y, int width, int height);
+
 // Specified in screen-coords where (0,0) is upper left corner
 int draw_rect(int x, int y, int w, int h)  // must be wrt to current window size
 {
-    set_rectangle(&rstate.raspitex_state, x,y,w,h)
+    set_rectangle(&rstate.raspitex_state, x,y,w,h);
     return 0;
 }
