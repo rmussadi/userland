@@ -128,7 +128,7 @@ static const EGLint vcsm_square_egl_config_attribs[] =
     EGL_NONE
 };
 
-static GLfloat line_varray[] =
+GLfloat line_varray[] =
 {
   -0.1f, -0.1f,
   -0.1f, 0.1f,
@@ -138,8 +138,29 @@ static GLfloat line_varray[] =
 
 void set_rectangle(RASPITEX_STATE *state, int x, int y, int width, int height)
 {
-  int ndcx1 = 2*(x/state->width) - 1;
-  int ndcy1 = 2*(x/state->width);
+  // convert from screen coordinates to NDC
+  GLfloat ndcx1 =  2*((float)x/(float)state->width) - 1;
+  GLfloat ndcy1 = -2*((float)y/(float)state->height) +1;
+
+  GLfloat ndcx2 =  2*(((float)x+(float)width)/(float)state->width) - 1;
+  GLfloat ndcy2 = -2*((float)(y+height)/(float)state->height) +1;
+
+  line_varray[0] = ndcx1;
+  line_varray[1] = ndcy2;
+
+  line_varray[2] = ndcx1;
+  line_varray[3] = ndcy1;
+
+  line_varray[4] = ndcx2;
+  line_varray[5] = ndcy1;
+
+  line_varray[6] = ndcx2;
+  line_varray[7] = ndcy2;
+
+  //  for(int x=0; x< 8; x+=2) {
+  //  printf("%f, %f  ", line_varray[x], line_varray[x+1]);
+  //}
+  //printf("\n");
 }
 
 void init_vcsm_rectangle()
