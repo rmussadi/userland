@@ -16,7 +16,7 @@ def greater_than(a,b, data):
 
     npa[1,1] = 22
     print npa
-    npa[10,1] = 44
+    #npa[10,1] = 44
     return 1
 
 

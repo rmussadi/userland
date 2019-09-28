@@ -357,7 +357,6 @@ static void system_init()
    set_app_name("raspistill");
 }
 
-typedef int (*callback_type)(float, float, void*);
 
 unsigned char buffer[] = {1,2,3,4,5,6,7,8,9,10};
 int callmeback(callback_type t)
