@@ -42,9 +42,8 @@
 
 #include "RaspiStill.h"
 #include "RaspiCommonSettings.h"
-#include "RaspiCamControl.h"
 #include "RaspiPreview.h"
-#include "RaspiCLI.h"
+#include "RaspiCamControl.h"
 #include "RaspiTex.h"
 #include "RaspiHelpers.h"
 
