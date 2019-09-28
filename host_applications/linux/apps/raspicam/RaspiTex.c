@@ -42,7 +42,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "interface/mmal/mmal_buffer.h"
 #include "interface/mmal/util/mmal_util.h"
 #include "interface/mmal/util/mmal_util_params.h"
-#include "tga.h"
 
 #include "gl_scenes/mirror.h"
 #include "gl_scenes/sobel.h"
