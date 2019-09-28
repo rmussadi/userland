@@ -61,20 +61,13 @@
 /// Video render needs at least 2 buffers.
 #define VIDEO_OUTPUT_BUFFERS_NUM 3
 
-
-/// Frame advance method
 enum
 {
    FRAME_NEXT_SINGLE,
    FRAME_NEXT_FOREVER,
 };
 
-/// Amount of time before first image taken to allow settling of
-/// exposure etc. in milliseconds.
-#define CAMERA_SETTLE_TIME 1000
-
-/** Structure containing all state information for the current run
- */
+/** Structure containing all state information for the current run */
 typedef struct
 {
    RASPICOMMONSETTINGS_PARAMETERS common_settings;     /// Common settings
@@ -90,10 +83,40 @@ typedef struct
 } RASPISTILL_STATE;
 
 
+// Our main data storage vessel..
+RASPISTILL_STATE rstate;
+   
+MMAL_PORT_T *camera_preview_port = NULL;
+MMAL_PORT_T *camera_video_port = NULL;
 
-/**
- * @param state Pointer to state structure to assign defaults to
- */
+// Copied from RaspiPreview.c
+void raspipreview_set_defaults(RASPIPREVIEW_PARAMETERS *state)
+{
+   state->wantPreview = 1;
+   state->wantFullScreenPreview = 1;
+   state->opacity = 255;
+   state->previewWindow.x = 0;
+   state->previewWindow.y = 0;
+   state->previewWindow.width = 1024;
+   state->previewWindow.height = 768;
+   state->preview_component = NULL;
+}
+
+// copied from RaspiCommonSettings.c
+void raspicommonsettings_set_defaults(RASPICOMMONSETTINGS_PARAMETERS *state)
+{
+   strncpy(state->camera_name, "(Unknown)", MMAL_PARAMETER_CAMERA_INFO_MAX_STR_LEN);
+   // We dont set width and height since these will be specific to the app being built.
+   state->width = 0;
+   state->height = 0;
+   state->filename = NULL;
+   state->verbose = 0;
+   state->cameraNum = 0;
+   state->sensor_mode = 0;
+   state->gps = 0;
+};
+
+// -
 static void default_status(RASPISTILL_STATE *state)
 {
    memset(state, 0, sizeof(*state));
@@ -113,8 +136,7 @@ static void default_status(RASPISTILL_STATE *state)
    raspitex_set_defaults(&state->raspitex_state);
 }
 
-/*
- */
+// -
 static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
 {
    MMAL_COMPONENT_T *camera = 0;
@@ -263,12 +285,7 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
    return status;
 }
 
-/**
- * Destroy the camera component
- *
- * @param state Pointer to state control struct
- *
- */
+// Destroy the camera component 
 static void destroy_camera_component(RASPISTILL_STATE *state)
 {
    if (state->camera_component)
@@ -278,14 +295,7 @@ static void destroy_camera_component(RASPISTILL_STATE *state)
    }
 }
 
-
-/**
- * Function to wait in various ways (depending on settings) for the next frame
- *
- * @param state Pointer to the state data
- * @param [in][out] frame The last frame number, adjusted to next frame number on output
- * @return !0 if to continue, 0 if reached end of run
- */
+// @param [in][out] frame The last frame number, adjusted to next frame number on output
 static int wait_for_next_frame(RASPISTILL_STATE *state, int *frame)
 {
    static int64_t complete_time = -1;
@@ -318,34 +328,6 @@ static int wait_for_next_frame(RASPISTILL_STATE *state, int *frame)
    return keep_running;
 }
 
-
-// Our main data storage vessel..
-RASPISTILL_STATE rstate;
-   
-MMAL_PORT_T *camera_preview_port = NULL;
-MMAL_PORT_T *camera_video_port = NULL;
-
-
-static void system_init()
-{
-   bcm_host_init();
-   // Register our application with the logging system
-   vcos_log_register("RaspiStill", VCOS_LOG_CATEGORY);
-   signal(SIGINT, default_signal_handler);
-   // Disable USR1 and USR2 for the moment - may be reenabled if go in to signal capture mode
-   signal(SIGUSR1, SIG_IGN);
-   signal(SIGUSR2, SIG_IGN);
-   set_app_name("raspistill");
-}
-
-void begin_loop()
-{
-  int frame;
-   
-   while (wait_for_next_frame(&rstate, &frame)) {
-   } // end for (frame)
-}
-
 int rs_teardown()
 {
    raspitex_stop(&rstate.raspitex_state);
@@ -357,10 +339,23 @@ int rs_teardown()
    if (rstate.camera_component)
      mmal_component_disable(rstate.camera_component);
    
-   raspipreview_destroy(&rstate.preview_parameters);
+   //raspipreview_destroy(&rstate.preview_parameters);
    destroy_camera_component(&rstate);
    
    return EX_OK;
+}
+
+// -
+static void system_init()
+{
+   bcm_host_init();
+   // Register our application with the logging system
+   vcos_log_register("RaspiStill", VCOS_LOG_CATEGORY);
+   signal(SIGINT, default_signal_handler);
+   // Disable USR1 and USR2 for the moment - may be reenabled if go in to signal capture mode
+   signal(SIGUSR1, SIG_IGN);
+   signal(SIGUSR2, SIG_IGN);
+   set_app_name("raspistill");
 }
 
 typedef int (*callback_type)(float, float, void*);
@@ -379,13 +374,23 @@ static void set_timeout(int duration)
    }
    rstate.frameNextMethod = FRAME_NEXT_SINGLE;
 }
-extern void set_rectangle(RASPITEX_STATE *state, int x, int y, int width, int height);
+
+extern int set_rectangle(RASPITEX_STATE *state, int x, int y, int width, int height);
 
 // Specified in screen-coords where (0,0) is upper left corner
 int draw_rect(int x, int y, int w, int h)  // must be wrt to current window size
 {
-    set_rectangle(&rstate.raspitex_state, x,y,w,h);
-    return 0;
+    return set_rectangle(&rstate.raspitex_state, x,y,w,h);
+}
+
+// -
+void begin_loop()
+{
+  int frame;
+   
+   while (wait_for_next_frame(&rstate, &frame)) {
+   } // end for (frame)
+   rs_teardown();
 }
 
 int start_video(int x, int y, int w, int h, int duration)
@@ -403,15 +408,11 @@ int start_video(int x, int y, int w, int h, int duration)
     // OK, we have a nice set of parameters. Now set up our components. We have 3 components. Camera, Preview and encoder.
     // Camera and encoder are different in stills/video, but preview is the same so handed off to a separate module
     assert (create_camera_component(&rstate) == MMAL_SUCCESS);
-
-    camera_preview_port = rstate.camera_component->output[MMAL_CAMERA_PREVIEW_PORT];
+    //camera_preview_port = rstate.camera_component->output[MMAL_CAMERA_PREVIEW_PORT];
     camera_video_port   = rstate.camera_component->output[MMAL_CAMERA_VIDEO_PORT];
     //   camera_still_port   = rstate.camera_component->output[MMAL_CAMERA_CAPTURE_PORT];
 
-    draw_rect(20, 20, 60, 100);  // must be wrt to current window size
     assert(raspitex_start(&rstate.raspitex_state) == 0);
 
-    begin_loop();  
-    rs_teardown();
     return 0;
 }

@@ -10,6 +10,6 @@ INCS="-I $PROJECT_SOURCE_DIR/host_applications/linux/apps/raspicam -I $PROJECT_S
 
 LIBS="-lvcsm -lmmal_core -lmmal_util -lmmal_vc_client -lvcos -lbcm_host -lbrcmGLESv2 -lbrcmEGL -lm -ldl -L/opt/vc/lib -lpthread -L $PROJECT_SOURCE_DIR/build/lib/"
 
-gcc -shared $INCS $LIBS gl_scenes/yuv.c gl_scenes/square.c gl_scenes/vcsm_square.c RaspiCamControl.c RaspiCLI.c RaspiPreview.c RaspiCommonSettings.c RaspiHelpers.c RaspiStill.c RaspiTex.c RaspiTexUtil.c tga.c  -o libtq84.so
+gcc -shared $INCS $LIBS   gl_scenes/vcsm_square.c RaspiCamControl.c RaspiCLI.c RaspiHelpers.c RaspiStill.c RaspiTex.c RaspiTexUtil.c  -o libtq84.so
 
 gcc   main.c -ltq84 $INCS $LIBS -L.

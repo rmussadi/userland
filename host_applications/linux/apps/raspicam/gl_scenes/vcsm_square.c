@@ -83,7 +83,7 @@ static RASPITEXUTIL_SHADER_PROGRAM_T line_shader =
     "   gl_Position = vec4(vertex, 0.9, 1.0);\n"
     "   color = vec3(1.0, 0.0, 0.0);"
     "   if (vertex.x > 0.0) {"
-         "   color = vec3(1.0, 1.0, 1.0);"
+         "   color = vec3(1.0, 0.0, 1.0);"
         "}"
    "} \n",
     
@@ -128,50 +128,50 @@ static const EGLint vcsm_square_egl_config_attribs[] =
     EGL_NONE
 };
 
-GLfloat line_varray[] =
-{
-  -0.1f, -0.1f,
-  -0.1f, 0.1f,
-   0.1f, 0.1f,
-   0.1f, -0.1f,
-};
+static int square_idx = 0;
+GLfloat line_varray[8*10];
 
-void set_rectangle(RASPITEX_STATE *state, int x, int y, int width, int height)
+int set_rectangle(RASPITEX_STATE *state, int x, int y, int width, int height)
 {
   // convert from screen coordinates to NDC
-  GLfloat ndcx1 =  2*((float)x/(float)state->width) - 1;
-  GLfloat ndcy1 = -2*((float)y/(float)state->height) +1;
+  GLfloat ndcx1 =  2*((GLfloat)x/(GLfloat)state->width) - 1;
+  GLfloat ndcy1 = -2*((GLfloat)y/(GLfloat)state->height) +1;
 
-  GLfloat ndcx2 =  2*(((float)x+(float)width)/(float)state->width) - 1;
-  GLfloat ndcy2 = -2*((float)(y+height)/(float)state->height) +1;
+  GLfloat ndcx2 =  2*(((GLfloat)x+(GLfloat)width)/(GLfloat)state->width) - 1;
+  GLfloat ndcy2 = -2*((GLfloat)(y+height)/(GLfloat)state->height) +1;
 
-  line_varray[0] = ndcx1;
-  line_varray[1] = ndcy2;
+  int idx = square_idx * 8;
+    
+  line_varray[idx+0] = ndcx1;
+  line_varray[idx+1] = ndcy2;
 
-  line_varray[2] = ndcx1;
-  line_varray[3] = ndcy1;
+  line_varray[idx+2] = ndcx1;
+  line_varray[idx+3] = ndcy1;
 
-  line_varray[4] = ndcx2;
-  line_varray[5] = ndcy1;
+  line_varray[idx+4] = ndcx2;
+  line_varray[idx+5] = ndcy1;
 
-  line_varray[6] = ndcx2;
-  line_varray[7] = ndcy2;
-
+  line_varray[idx+6] = ndcx2;
+  line_varray[idx+7] = ndcy2;
+  int lidx = square_idx;
+  square_idx++;
+  
   //  for(int x=0; x< 8; x+=2) {
   //  printf("%f, %f  ", line_varray[x], line_varray[x+1]);
   //}
   //printf("\n");
+  return lidx;
 }
 
-void init_vcsm_rectangle()
+static void init_vcsm_rectangle()
 {
     GLCHK(glGenBuffers(1, &line_vbo));
 }
 
-void draw_vcsm_rectangle()
+static void draw_vcsm_rectangle(int idx)
 {
     GLCHK(glBindBuffer(GL_ARRAY_BUFFER, line_vbo));
-    GLCHK(glBufferData(GL_ARRAY_BUFFER, sizeof(line_varray), line_varray, GL_STATIC_DRAW));
+    GLCHK(glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat)*8, &line_varray[idx*8], GL_STATIC_DRAW));
     GLCHK(glUseProgram(line_shader.program));
     GLCHK(glEnableVertexAttribArray(line_shader.attribute_locations[0]));
     GLCHK(glVertexAttribPointer(line_shader.attribute_locations[0], 2, GL_FLOAT, GL_FALSE, 0, 0));
@@ -332,7 +332,9 @@ static int vcsm_square_redraw(RASPITEX_STATE *raspitex_state)
     GLCHK(glDrawArrays(GL_TRIANGLES, 0, 6));
     GLCHK(glDisableVertexAttribArray(vcsm_square_shader.attribute_locations[0]));
 
-    draw_vcsm_rectangle();
+    for(int x =0; x < square_idx; x++) {
+        draw_vcsm_rectangle(x);
+    }
 
     GLCHK(glUseProgram(0));
 

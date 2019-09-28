@@ -75,10 +75,10 @@ void display_valid_parameters(char *name, void (*app_help)(char*))
       (*app_help)(name);
 
    // general settings
-   raspicommonsettings_display_help();
+   //raspicommonsettings_display_help();
 
    // Help for preview options
-   raspipreview_display_help();
+   //raspipreview_display_help();
 
    // Now display any help information from the camcontrol code
    raspicamcontrol_display_help();

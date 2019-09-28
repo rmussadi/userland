@@ -224,6 +224,7 @@ static void update_fps()
  * @param state RASPITEX STATE
  * @return Zero if successful.
  */
+#if 0
 static void raspitex_do_capture(RASPITEX_STATE *state)
 {
    uint8_t *buffer = NULL;
@@ -247,6 +248,7 @@ static void raspitex_do_capture(RASPITEX_STATE *state)
       vcos_semaphore_post(&state->capture.completed_sem);
    }
 }
+#endif
 
 /**
  * Checks if there is at least one valid EGL image.
@@ -345,7 +347,7 @@ static int raspitex_draw(RASPITEX_STATE *state, MMAL_BUFFER_HEADER_T *buf)
       if (rc != 0)
          goto end;
 
-      raspitex_do_capture(state);
+      //raspitex_do_capture(state);
 
       eglSwapBuffers(state->display, state->surface);
       update_fps();
@@ -585,12 +587,14 @@ int raspitex_init(RASPITEX_STATE *state)
 
    switch (state->scene_id)
    {
+     /*
    case RASPITEX_SCENE_SQUARE:
-      rc = square_open(state);
-      break;
+       rc = square_open(state);
+       break;
    case RASPITEX_SCENE_YUV:
       rc = yuv_open(state);
       break;
+     */
    case RASPITEX_SCENE_VCSM_SQUARE:
        rc = vcsm_square_open(state);
        break;
@@ -704,54 +708,3 @@ int raspitex_start(RASPITEX_STATE *state)
    return (status == VCOS_SUCCESS ? 0 : -1);
 }
 
-/**
- * Writes the next GL frame-buffer to a RAW .ppm formatted file
- * using the specified file-handle.
- * @param state Pointer to the GL preview state.
- * @param outpt_file Output file handle for the ppm image.
- * @return Zero on success.
- */
-int raspitex_capture(RASPITEX_STATE *state, FILE *output_file)
-{
-   int rc = 0;
-   uint8_t *buffer = NULL;
-   size_t size = 0;
-
-   vcos_log_trace("%s: state %p file %p", VCOS_FUNCTION,
-                  state, output_file);
-
-   if (state && output_file)
-   {
-      /* Only request one capture at a time */
-      vcos_semaphore_wait(&state->capture.start_sem);
-      state->capture.request = 1;
-
-      /* Wait for capture to start */
-      vcos_semaphore_wait(&state->capture.completed_sem);
-
-      /* Take ownership of the captured buffer */
-      buffer = state->capture.buffer;
-      size = state->capture.size;
-
-      state->capture.request = 0;
-      state->capture.buffer = 0;
-      state->capture.size = 0;
-
-      /* Allow another capture to be requested */
-      vcos_semaphore_post(&state->capture.start_sem);
-   }
-   if (size == 0 || ! buffer)
-   {
-      vcos_log_error("%s: capture failed", VCOS_FUNCTION);
-      rc = -1;
-      goto end;
-   }
-
-   raspitexutil_brga_to_rgba(buffer, size);
-   rc = write_tga(output_file, state->width, state->height, buffer, size);
-   fflush(output_file);
-
-end:
-   free(buffer);
-   return rc;
-}
