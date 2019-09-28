@@ -32,7 +32,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "interface/vcos/vcos.h"
 
+extern "C" {
 #include "interface/vmcs_host/vc_vchi_gencmd.h"
+}
 #include "interface/mmal/mmal.h"
 #include "interface/mmal/mmal_logging.h"
 #include "interface/mmal/util/mmal_util.h"
@@ -332,7 +334,7 @@ int raspicamcontrol_cycle_test(MMAL_COMPONENT_T *camera)
    {
       // MMAL_PARAM_EXPOSUREMODE_T
       if (update_cycle_parameter(&parameter_option, 0, exposure_map_size, 1))
-         raspicamcontrol_set_exposure_mode(camera, exposure_map[parameter_option].mmal_mode);
+  	  raspicamcontrol_set_exposure_mode(camera, (MMAL_PARAM_EXPOSUREMODE_T)exposure_map[parameter_option].mmal_mode);
       else
       {
          raspicamcontrol_set_exposure_mode(camera, MMAL_PARAM_EXPOSUREMODE_AUTO);
@@ -343,7 +345,7 @@ int raspicamcontrol_cycle_test(MMAL_COMPONENT_T *camera)
    {
       // MMAL_PARAM_AWB_T
       if (update_cycle_parameter(&parameter_option, 0, awb_map_size, 1))
-         raspicamcontrol_set_awb_mode(camera, awb_map[parameter_option].mmal_mode);
+	raspicamcontrol_set_awb_mode(camera, (MMAL_PARAM_AWBMODE_T)awb_map[parameter_option].mmal_mode);
       else
       {
          raspicamcontrol_set_awb_mode(camera, MMAL_PARAM_AWBMODE_AUTO);
@@ -354,7 +356,7 @@ int raspicamcontrol_cycle_test(MMAL_COMPONENT_T *camera)
    {
       // MMAL_PARAM_IMAGEFX_T
       if (update_cycle_parameter(&parameter_option, 0, imagefx_map_size, 1))
-         raspicamcontrol_set_imageFX(camera, imagefx_map[parameter_option].mmal_mode);
+	raspicamcontrol_set_imageFX(camera, (MMAL_PARAM_IMAGEFX_T)imagefx_map[parameter_option].mmal_mode);
       else
       {
          raspicamcontrol_set_imageFX(camera, MMAL_PARAM_IMAGEFX_NONE);
@@ -1417,7 +1419,7 @@ int raspicamcontrol_set_rotation(MMAL_COMPONENT_T *camera, int rotation)
    mmal_port_parameter_set_int32(camera->output[1], MMAL_PARAMETER_ROTATION, my_rotation);
    mmal_port_parameter_set_int32(camera->output[2], MMAL_PARAMETER_ROTATION, my_rotation);
 
-   return mmal_status_to_int(ret);
+   return (int)mmal_status_to_int((MMAL_STATUS_T)ret);
 }
 
 /**

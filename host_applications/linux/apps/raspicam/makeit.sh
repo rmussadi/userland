@@ -7,9 +7,10 @@
 PROJECT_SOURCE_DIR='/home/pi/swdev/userland'
 
 INCS="-I $PROJECT_SOURCE_DIR/host_applications/linux/apps/raspicam -I $PROJECT_SOURCE_DIR/host_applications/linux/libs/bcm_host/include -I $PROJECT_SOURCE_DIR/host_applications/linux/libs/sm -I./userland/interface/khronos/include/ -I $PROJECT_SOURCE_DIR/interface/khronos/include/ -I $PROJECT_SOURCE_DIR/"
+CFLAGS=-fpermissive
 
 LIBS="-lvcsm -lmmal_core -lmmal_util -lmmal_vc_client -lvcos -lbcm_host -lbrcmGLESv2 -lbrcmEGL -lm -ldl -L/opt/vc/lib -lpthread -L $PROJECT_SOURCE_DIR/build/lib/"
 
-gcc -shared $INCS $LIBS   gl_scenes/vcsm_square.c RaspiCamControl.c RaspiCLI.c RaspiHelpers.c RaspiStill.c RaspiTex.c RaspiTexUtil.c  -o libtq84.so
+gcc -shared -fpermissive $INCS $LIBS $CFLAGS   gl_scenes/vcsm_square.cpp RaspiCamControl.cpp RaspiCLI.cpp RaspiHelpers.cpp RaspiStill.cpp RaspiTex.cpp RaspiTexUtil.cpp  -o libtq84.so
 
-gcc   main.c -ltq84 $INCS $LIBS -L.
+gcc   main.cpp -ltq84 $CFLAGS $INCS $LIBS -L.

@@ -56,6 +56,5 @@ void raspicommonsettings_dump_parameters(RASPICOMMONSETTINGS_PARAMETERS *);
 void raspicommonsettings_display_help();
 int raspicommonsettings_parse_cmdline(RASPICOMMONSETTINGS_PARAMETERS *state, const char *arg1, const char *arg2, void (*app_help)());
 
-extern char *basename(const char *);
 
 #endif

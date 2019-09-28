@@ -145,11 +145,11 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
 
    /* Create the component */
    status = mmal_component_create(MMAL_COMPONENT_DEFAULT_CAMERA, &camera);
-   assert(status == MMAL_SUCCESS);
-   status = raspicamcontrol_set_stereo_mode(camera->output[0], &state->camera_parameters.stereo_mode);
-   status += raspicamcontrol_set_stereo_mode(camera->output[1], &state->camera_parameters.stereo_mode);
-   status += raspicamcontrol_set_stereo_mode(camera->output[2], &state->camera_parameters.stereo_mode);
-   assert (status == MMAL_SUCCESS);
+   //assert(status == MMAL_SUCCESS);
+   raspicamcontrol_set_stereo_mode(camera->output[0], &state->camera_parameters.stereo_mode);
+   raspicamcontrol_set_stereo_mode(camera->output[1], &state->camera_parameters.stereo_mode);
+   raspicamcontrol_set_stereo_mode(camera->output[2], &state->camera_parameters.stereo_mode);
+   //assert (status == MMAL_SUCCESS);
 
    MMAL_PARAMETER_INT32_T camera_num =
      {{MMAL_PARAMETER_CAMERA_NUM, sizeof(camera_num)}, state->common_settings.cameraNum};
@@ -174,12 +174,12 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
       MMAL_PARAMETER_CAMERA_CONFIG_T cam_config =
       {
          { MMAL_PARAMETER_CAMERA_CONFIG, sizeof(cam_config) },
-         .max_stills_w = state->common_settings.width,
-         .max_stills_h = state->common_settings.height,
+         .max_stills_w = (uint32_t)state->common_settings.width,
+         .max_stills_h = (uint32_t)state->common_settings.height,
          .stills_yuv422 = 0,
          .one_shot_stills = 1,
-         .max_preview_video_w = state->preview_parameters.previewWindow.width,
-         .max_preview_video_h = state->preview_parameters.previewWindow.height,
+         .max_preview_video_w = (uint32_t)state->preview_parameters.previewWindow.width,
+         .max_preview_video_h = (uint32_t)state->preview_parameters.previewWindow.height,
          .num_preview_video_frames = 3,
          .stills_capture_circular_buffer_height = 0,
          .fast_preview_resume = 0,
@@ -277,7 +277,7 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
    status = mmal_component_enable(camera);
    assert(status == MMAL_SUCCESS);
 
-   status = raspitex_configure_preview_port(&state->raspitex_state, preview_port);
+   raspitex_configure_preview_port(&state->raspitex_state, preview_port);
    assert(status == MMAL_SUCCESS);
    state->camera_component = camera;
 
@@ -363,6 +363,7 @@ unsigned char buffer[] = {1,2,3,4,5,6,7,8,9,10};
 int callmeback(callback_type t)
 {
    t(2.0,1.0, buffer);
+   return 0;
 }
 
 static void set_timeout(int duration)

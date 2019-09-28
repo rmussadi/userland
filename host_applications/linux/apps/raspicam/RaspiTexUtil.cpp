@@ -472,7 +472,7 @@ int raspitexutil_capture_bgra(RASPITEX_STATE *state,
                   state->width, state->height, bytes_per_pixel);
 
    *buffer_size = state->width * state->height * bytes_per_pixel;
-   *buffer = calloc(*buffer_size, 1);
+   *buffer = (uint8_t*)calloc(*buffer_size, 1);
    if (! *buffer)
       goto error;
 

@@ -406,7 +406,7 @@ static int preview_process_returned_bufs(RASPITEX_STATE* state)
  */
 static void *preview_worker(void *arg)
 {
-   RASPITEX_STATE* state = arg;
+  RASPITEX_STATE* state = (RASPITEX_STATE*)arg;
    MMAL_PORT_T *preview_port = state->preview_port;
    MMAL_BUFFER_HEADER_T *buf;
    MMAL_STATUS_T st;
