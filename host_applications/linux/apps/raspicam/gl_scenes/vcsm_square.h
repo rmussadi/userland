@@ -34,5 +34,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 int vcsm_square_open(RASPITEX_STATE *state);
 int set_rectangle(RASPITEX_STATE *state, int x, int y, int width, int height);
+extern "C" {
+   typedef int (*buffer_cb_type)(unsigned char *);
+   extern   int set_glbuff_cb(buffer_cb_type callback_fn);
+}
 
 #endif /* VCSM_SQUARE_H */

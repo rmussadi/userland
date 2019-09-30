@@ -4,6 +4,7 @@ import ctypes as ct
 import sys
 import numpy as np
 from PIL import Image
+import cv2
 
 def greater_than(a,b, data):
     npa = np.frombuffer(ct.cast(data, ct.POINTER(ct.c_uint8 * 10)).contents, dtype=np.uint8, count=10).reshape((5,2))

@@ -23,6 +23,11 @@
  */
 //#define USE_READPIXELS
 
+#include <glm/vec3.hpp> // glm::vec3
+#include <glm/vec4.hpp> // glm::vec4
+#include <glm/mat4x4.hpp> // glm::mat4
+#include <glm/gtc/matrix_transform.hpp> // glm::translate, glm::rotate, glm::scale, glm::perspective
+
 #include "vcsm_square.h"
 #include <GLES2/gl2.h>
 #include <EGL/egl.h>
@@ -202,6 +207,7 @@ static int do_nothing(unsigned char *buffer)
 {
   return 0;
 }
+
 
 typedef int (*buffer_cb_type)(unsigned char *);
 

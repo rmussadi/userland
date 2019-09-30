@@ -305,8 +305,6 @@ static int wait_for_next_frame(RASPISTILL_STATE *state, int *frame)
    if (complete_time == -1)
       complete_time =  current_time + state->timeout;
 
-   // if we have run out of time, flag we need to exit
-   // If timeout = 0 then always continue
    if (current_time >= complete_time && state->timeout != 0)
       keep_running = 0;
 
@@ -337,8 +335,7 @@ int rs_teardown()
    
    if (rstate.camera_component)
      mmal_component_disable(rstate.camera_component);
-   
-   //raspipreview_destroy(&rstate.preview_parameters);
+
    destroy_camera_component(&rstate);
    
    return EX_OK;
@@ -348,15 +345,22 @@ int rs_teardown()
 static void system_init()
 {
    bcm_host_init();
-   // Register our application with the logging system
-   vcos_log_register("RaspiStill", VCOS_LOG_CATEGORY);
+   vcos_log_register("RaspiStill", VCOS_LOG_CATEGORY);    // Register our application with the logging system
    signal(SIGINT, default_signal_handler);
-   // Disable USR1 and USR2 for the moment - may be reenabled if go in to signal capture mode
    signal(SIGUSR1, SIG_IGN);
    signal(SIGUSR2, SIG_IGN);
    set_app_name("raspistill");
 }
 
+//-----------------------------------------------------------------
+//-----------------------------------------------------------------
+
+extern "C" {
+ typedef int (*callback_type)(float, float, void*);
+ extern int callmeback(callback_type t);
+ typedef int (*buffer_cb_type)(unsigned char *);
+ extern int set_glbuff_cb(buffer_cb_type callback_fn);
+}
 
 unsigned char buffer[] = {1,2,3,4,5,6,7,8,9,10};
 int callmeback(callback_type t)
@@ -385,33 +389,25 @@ int draw_rect(int x, int y, int w, int h)  // must be wrt to current window size
 // -
 void begin_loop()
 {
-  int frame;
-   
-   while (wait_for_next_frame(&rstate, &frame)) {
-   } // end for (frame)
-   rs_teardown();
+    int frame;   
+    while (wait_for_next_frame(&rstate, &frame))
+    { ; }
+    rs_teardown();
 }
 
+// Check picamera docs to see if preview should always be on to allow time for sensor to learn
+// Launches a worker thread to process camera frames
 int start_video(int x, int y, int w, int h, int duration)
 {
     system_init();
     default_status(&rstate);
-
-    // Setup for sensor specific parameters
     get_sensor_defaults(rstate.common_settings.cameraNum, rstate.common_settings.camera_name,
 			&rstate.common_settings.width, &rstate.common_settings.height);
     set_timeout(duration);
     raspitex_set_window(&rstate.raspitex_state, x, y, w, h);
-
     raspitex_init(&rstate.raspitex_state);
-    // OK, we have a nice set of parameters. Now set up our components. We have 3 components. Camera, Preview and encoder.
-    // Camera and encoder are different in stills/video, but preview is the same so handed off to a separate module
     assert (create_camera_component(&rstate) == MMAL_SUCCESS);
-    //camera_preview_port = rstate.camera_component->output[MMAL_CAMERA_PREVIEW_PORT];
     camera_video_port   = rstate.camera_component->output[MMAL_CAMERA_VIDEO_PORT];
-    //   camera_still_port   = rstate.camera_component->output[MMAL_CAMERA_CAPTURE_PORT];
-
     assert(raspitex_start(&rstate.raspitex_state) == 0);
-
     return 0;
 }
