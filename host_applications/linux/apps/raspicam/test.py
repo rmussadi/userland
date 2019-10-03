@@ -6,6 +6,11 @@ import numpy as np
 from PIL import Image
 import cv2
 
+width = 1024
+height = 1024
+channels = 1
+frame_buffer_size = width * height * channels
+
 def greater_than(a,b, data):
     npa = np.frombuffer(ct.cast(data, ct.POINTER(ct.c_uint8 * 10)).contents, dtype=np.uint8, count=10).reshape((5,2))
     if a > b:
@@ -23,6 +28,7 @@ def greater_than(a,b, data):
 x=1
 
 def joe_gots_a_frame(data):
+    npa = np.frombuffer(ct.cast(data, ct.POINTER(ct.c_uint8 * frame_buffer_size)).contents, dtype=np.uint8, count=frame_buffer_size).reshape((width,height))
     global x
     print "frame", x
     x = x+1
