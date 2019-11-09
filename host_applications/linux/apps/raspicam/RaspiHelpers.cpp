@@ -44,7 +44,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "RaspiCLI.h"
 #include "RaspiPreview.h"
 #include "RaspiCamControl.h"
-#include "RaspiCommonSettings.h"
+//#include "RaspiCommonSettings.h"
 
 #ifndef GIT_COMMIT_ID
 #define GIT_COMMIT_ID "Not found"
