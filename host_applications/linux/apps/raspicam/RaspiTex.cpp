@@ -64,107 +64,12 @@
  * See also: http://www.khronos.org/registry/gles/extensions/OES/OES_EGL_image_external.txt
  */
 
-#define DEFAULT_WIDTH   640
-#define DEFAULT_HEIGHT  480
+#define DEFAULT_WIDTH   1024
+#define DEFAULT_HEIGHT  1024
 
-enum
-{
-   CommandGLScene,
-   CommandGLWin
-};
-
-static COMMAND_LIST cmdline_commands[] =
-{
-   { CommandGLScene, "-glscene",  "gs",  "GL scene square,teapot,mirror,yuv,sobel,vcsm_square", 1 },
-   { CommandGLWin,   "-glwin",    "gw",  "GL window settings <'x,y,w,h'>", 1 },
-};
-
-static int cmdline_commands_size = sizeof(cmdline_commands) / sizeof(cmdline_commands[0]);
-
-/**
- * Parse a possible command pair - command and parameter
- * @param arg1 Command
- * @param arg2 Parameter (could be NULL)
- * @return How many parameters were used, 0,1,2
- */
-int raspitex_parse_cmdline(RASPITEX_STATE *state,
-                           const char *arg1, const char *arg2)
-{
-   int command_id, used = 0, num_parameters;
-
-   if (!arg1)
-      return 0;
-
-   command_id = raspicli_get_command_id(cmdline_commands,
-                                        cmdline_commands_size, arg1, &num_parameters);
-
-   // If invalid command, or we are missing a parameter, drop out
-   if (command_id==-1 || (command_id != -1 && num_parameters > 0 && arg2 == NULL))
-      return 0;
-
-   switch (command_id)
-   {
-   case CommandGLWin: // Allows a GL window to be different to preview-res
-   {
-      int tmp;
-      tmp = sscanf(arg2, "%d,%d,%d,%d",
-                   &state->x, &state->y, &state->width, &state->height);
-      if (tmp != 4)
-      {
-         // Default to safe size on parse error
-         state->x = state->y = 0;
-         state->width = DEFAULT_WIDTH;
-         state->height = DEFAULT_HEIGHT;
-      }
-      else
-      {
-         state->gl_win_defined = 1;
-      }
-
-      used = 2;
-      break;
-   }
-
-   case CommandGLScene: // Selects the GL scene
-   {
-      if (strcmp(arg2, "square") == 0)
-         state->scene_id = RASPITEX_SCENE_SQUARE;
-      else if (strcmp(arg2, "teapot") == 0)
-         state->scene_id = RASPITEX_SCENE_TEAPOT;
-      else if (strcmp(arg2, "mirror") == 0)
-         state->scene_id = RASPITEX_SCENE_MIRROR;
-      else if (strcmp(arg2, "yuv") == 0)
-         state->scene_id = RASPITEX_SCENE_YUV;
-      else if (strcmp(arg2, "sobel") == 0)
-         state->scene_id = RASPITEX_SCENE_SOBEL;
-      else if (strcmp(arg2, "vcsm_square") == 0)
-         state->scene_id = RASPITEX_SCENE_VCSM_SQUARE;
-      else
-         vcos_log_error("Unknown scene %s", arg2);
-
-      used = 2;
-      break;
-   }
-   }
-   return used;
-}
 
 void raspitex_set_window(RASPITEX_STATE *state, int32_t x, int32_t y, int32_t width, int32_t height)
 {
-  state->x = x;
-  state->y = y;
-  state->width = width;
-  state->height = height;
-  state->gl_win_defined = 1;
-}
-
-/**
- * Display help for command line options
- */
-void raspitex_display_help()
-{
-   fprintf(stdout, "\nGL parameter commands\n\n");
-   raspicli_display_help(cmdline_commands, cmdline_commands_size);
 }
 
 static void update_fps()
@@ -192,37 +97,6 @@ static void update_fps()
       vcos_log_error("%3.2f FPS", fps);
    }
 }
-
-/**
- * Captures the frame-buffer if requested.
- * @param state RASPITEX STATE
- * @return Zero if successful.
- */
-#if 0
-static void raspitex_do_capture(RASPITEX_STATE *state)
-{
-   uint8_t *buffer = NULL;
-   size_t size = 0;
-
-   if (state->capture.request)
-   {
-      if (state->ops.capture(state, &buffer, &size) == 0)
-      {
-         /* Pass ownership of buffer to main thread via capture state */
-         state->capture.buffer = buffer;
-         state->capture.size = size;
-      }
-      else
-      {
-         state->capture.buffer = NULL; // Null indicates an error
-         state->capture.size = 0;
-      }
-
-      state->capture.request = 0; // Always clear request and post sem
-      vcos_semaphore_post(&state->capture.completed_sem);
-   }
-}
-#endif
 
 /**
  * Checks if there is at least one valid EGL image.
@@ -534,51 +408,31 @@ end:
    return (status == MMAL_SUCCESS ? 0 : -1);
 }
 
-/* Initialises GL preview state and creates the dispmanx native window.
- * @param state Pointer to the GL preview state.
- * @return Zero if successful.
- */
-int raspitex_init(RASPITEX_STATE *state)
+// Initialises GL preview state and creates the dispmanx native window.
+int raspitex_init(RASPITEX_STATE *state, int32_t x, int32_t y, int32_t width, int32_t height)
 {
    VCOS_STATUS_T status;
    int rc;
    vcos_init();
 
    vcos_log_register("RaspiTex", VCOS_LOG_CATEGORY);
-   vcos_log_set_level(VCOS_LOG_CATEGORY,
-                      state->verbose ? VCOS_LOG_INFO : VCOS_LOG_WARN);
+   vcos_log_set_level(VCOS_LOG_CATEGORY, state->verbose ? VCOS_LOG_INFO : VCOS_LOG_WARN);
    vcos_log_trace("%s", VCOS_FUNCTION);
 
-   status = vcos_semaphore_create(&state->capture.start_sem,
-                                  "glcap_start_sem", 1);
+   status = vcos_semaphore_create(&state->capture.start_sem, "glcap_start_sem", 1);
    if (status != VCOS_SUCCESS)
       goto error;
-
    status = vcos_semaphore_create(&state->capture.completed_sem,
                                   "glcap_completed_sem", 0);
    if (status != VCOS_SUCCESS)
       goto error;
 
-   switch (state->scene_id)
-   {
-     /*
-   case RASPITEX_SCENE_SQUARE:
-       rc = square_open(state);
-       break;
-   case RASPITEX_SCENE_YUV:
-      rc = yuv_open(state);
-      break;
-     */
-   case RASPITEX_SCENE_VCSM_SQUARE:
-       rc = vcsm_square_open(state);
-       break;
-   default:
-      rc = -1;
-      break;
-   }
-   if (rc != 0)
-      goto error;
-
+   state->x = x;
+   state->y = y;
+   state->width = width;
+   state->height = height;
+  
+   vcsm_square_open(state);
    return 0;
 
 error:
@@ -586,20 +440,16 @@ error:
    return -1;
 }
 
-/* Destroys the pools of buffers used by the GL renderer.
- * @param  state Pointer to the GL preview state.
- */
+/* Destroys the pools of buffers used by the GL renderer. */
 void raspitex_destroy(RASPITEX_STATE *state)
 {
    vcos_log_trace("%s", VCOS_FUNCTION);
-   if (state->preview_pool)
-   {
+   if (state->preview_pool) {
       mmal_pool_destroy(state->preview_pool);
       state->preview_pool = NULL;
    }
 
-   if (state->preview_queue)
-   {
+   if (state->preview_queue) {
       mmal_queue_destroy(state->preview_queue);
       state->preview_queue = NULL;
    }
@@ -614,12 +464,7 @@ void raspitex_destroy(RASPITEX_STATE *state)
    vcos_semaphore_delete(&state->capture.completed_sem);
 }
 
-/* Initialise the GL / window state to sensible defaults.
- * Also initialise any rendering parameters e.g. the scene
- *
- * @param state Pointer to the GL preview state.
- * @return Zero if successful.
- */
+// Initialise the GL / window state to sensible defaults
 void raspitex_set_defaults(RASPITEX_STATE *state)
 {
    memset(state, 0, sizeof(*state));
@@ -647,26 +492,17 @@ void raspitex_set_defaults(RASPITEX_STATE *state)
    state->ops.close = raspitexutil_close;
 }
 
-/* Stops the rendering loop and destroys MMAL resources
- * @param state  Pointer to the GL preview state.
- */
+// Stops the rendering loop and destroys MMAL resources 
 void raspitex_stop(RASPITEX_STATE *state)
 {
-   if (! state->preview_stop)
-   {
+   if (! state->preview_stop) {
       vcos_log_trace("Stopping GL preview");
       state->preview_stop = 1;
       vcos_thread_join(&state->preview_thread, NULL);
    }
 }
 
-/**
- * Starts the worker / GL renderer thread.
- * @pre raspitex_init was successful
- * @pre raspitex_configure_preview_port was successful
- * @param state Pointer to the GL preview state.
- * @return Zero on success, otherwise, -1 is returned
- * */
+// Starts the worker / GL renderer thread. 
 int raspitex_start(RASPITEX_STATE *state)
 {
    VCOS_STATUS_T status;
@@ -674,11 +510,9 @@ int raspitex_start(RASPITEX_STATE *state)
    vcos_log_trace("%s", VCOS_FUNCTION);
    status = vcos_thread_create(&state->preview_thread, "preview-worker",
                                NULL, preview_worker, state);
-
-   if (status != VCOS_SUCCESS)
-      vcos_log_error("%s: Failed to start worker thread %d",
-                     VCOS_FUNCTION, status);
-
+   if (status != VCOS_SUCCESS) {
+      vcos_log_error("%s: Failed to start worker thread %d", VCOS_FUNCTION, status);
+   }
    return (status == VCOS_SUCCESS ? 0 : -1);
 }
 

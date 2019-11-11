@@ -21,7 +21,6 @@
  * should run at about 40fps with a 1024x1024 texture compared to about 20fps
  * using glReadPixels.
  */
-//#define USE_READPIXELS
 
 #include <glm/vec3.hpp> // glm::vec3
 #include <glm/vec4.hpp> // glm::vec4
@@ -42,22 +41,39 @@ static RASPITEXUTIL_SHADER_PROGRAM_T vcsm_square_oes_shader =
 {
     .vertex_source =
     "attribute vec2 vertex;\n"
-    "varying vec2 texcoord;\n"
+    "varying vec2 texcoord1;\n"
+    "varying vec2 texcoord2;\n"
+    "varying vec2 texcoord3;\n"
+    "varying vec2 texcoord4;\n"    
     "void main(void) {\n"
-    "   texcoord = 0.5 * (vertex + 1.0);\n" \
+    "   texcoord1.x = 0.5 * (vertex.x + 1.0) + 0.0/1024.0;\n"
+    "   texcoord2.x = 0.5 * (vertex.x + 1.0) + 1.0/1024.0;\n"
+    "   texcoord3.x = 0.5 * (vertex.x + 1.0) + 2.0/1024.0;\n"
+    "   texcoord4.x = 0.5 * (vertex.x + 1.0) + 3.0/1024.0;\n"
+    "   texcoord1.y = 0.5 * (vertex.y + 1.0);\n"
+    "   texcoord2.y = 0.5 * (vertex.y + 1.0);\n"
+    "   texcoord3.y = 0.5 * (vertex.y + 1.0);\n"
+    "   texcoord4.y = 0.5 * (vertex.y + 1.0);\n"
     "   gl_Position = vec4(vertex, 0.0, 1.0);\n"
     "}\n",
 
     .fragment_source =
     "#extension GL_OES_EGL_image_external : require\n"
     "uniform samplerExternalOES tex;\n"
-    "varying vec2 texcoord;\n"
+    "varying vec2 texcoord1;\n"
+    "varying vec2 texcoord2;\n"
+    "varying vec2 texcoord3;\n"
+    "varying vec2 texcoord4;\n"    
     "void main(void) {\n"
-    "    gl_FragColor = texture2D(tex, texcoord);\n"
+    "    gl_FragColor.x = texture2D(tex, texcoord1).x;\n"
+    "    gl_FragColor.y = texture2D(tex, texcoord2).x;\n"
+    "    gl_FragColor.z = texture2D(tex, texcoord3).x;\n"
+    "    gl_FragColor.w = texture2D(tex, texcoord4).x;\n"
     "}\n",
     .uniform_names = {"tex"},
     .attribute_names = {"vertex"},
 };
+
 static RASPITEXUTIL_SHADER_PROGRAM_T vcsm_square_shader =
 {
     .vertex_source =
@@ -120,8 +136,8 @@ static GLuint fb_name;
 
 // VCSM buffer dimensions must be a power of two. Use glViewPort to draw NPOT
 // rectangles within the VCSM buffer.
-static int fb_width = 1024;
-static int fb_height = 1024;
+static int fb_width;
+static int fb_height;
 
 static const EGLint vcsm_square_egl_config_attribs[] =
 {
@@ -205,7 +221,7 @@ static int vcsm_square_draw_pattern(unsigned char *buffer)
 
 static int do_nothing(unsigned char *buffer)
 {
-  return 0;
+    return 0;
 }
 
 
@@ -219,15 +235,25 @@ int set_glbuff_cb(buffer_cb_type callback_fn)
 }
 
 //
+#define superw 8
+#define superh 8
+unsigned char buffer[superw * superh];
+
+
 void publish_buffer(unsigned char *vcsm_buffer)
 {
     if(glbuff_cb == NULL) {
         vcsm_square_draw_pattern(vcsm_buffer);
     } else {
-        glbuff_cb(vcsm_buffer);
+      glbuff_cb(vcsm_buffer);
+      /*
+      for(int x = 0 ; x< superw * superh; x++) {
+	buffer[x]= 128;
+      }
+      glbuff_cb(buffer);
+      */
     }
 }
-
 
 static int vcsm_square_init(RASPITEX_STATE *raspitex_state)
 {
@@ -235,37 +261,28 @@ static int vcsm_square_init(RASPITEX_STATE *raspitex_state)
     vcos_log_trace("%s: vcsm_init %d", VCOS_FUNCTION, rc);
 
     raspitex_state->egl_config_attribs = vcsm_square_egl_config_attribs;
-    rc = raspitexutil_gl_init_2_0(raspitex_state);
+    raspitexutil_gl_init_2_0(raspitex_state);
 
-    if (rc != 0)
-        goto end;
-
-    // Shader for drawing the YUV OES texture
-    rc = raspitexutil_build_shader_program(&vcsm_square_oes_shader);
+    rc = raspitexutil_build_shader_program(&vcsm_square_oes_shader);  // Shader for drawing the YUV OES texture
     GLCHK(glUseProgram(vcsm_square_oes_shader.program));
     GLCHK(glUniform1i(vcsm_square_oes_shader.uniform_locations[0], 0)); // tex unit
-
-    // Shader for drawing VCSM sampler2D texture
-    rc = raspitexutil_build_shader_program(&vcsm_square_shader);
+    rc = raspitexutil_build_shader_program(&vcsm_square_shader); // Shader for drawing VCSM sampler2D texture
     GLCHK(glUseProgram(vcsm_square_shader.program));
     GLCHK(glUniform1i(vcsm_square_shader.uniform_locations[0], 0)); // tex unit
-
-    // Shader for lines
-    rc = raspitexutil_build_shader_program(&line_shader);
+    rc = raspitexutil_build_shader_program(&line_shader);      // Shader for lines
     GLCHK(glUseProgram(line_shader.program));
-    //    GLCHK(glUniform1i(line_shader.uniform_locations[0], 0)); 
     
-    // --------- Frame Buffer stuff -----------
-    GLCHK(glGenFramebuffers(1, &fb_name));   // Create a new FBO object
+    // --------- Create a Virtual Frame Buffer using CPU accessable memory  -----------
+    GLCHK(glGenFramebuffers(1, &fb_name));              // Create a new FBO object
     GLCHK(glBindFramebuffer(GL_FRAMEBUFFER, fb_name));  // Make it active
-
-    GLCHK(glGenTextures(1, &fb_tex_name));   // Create a new OpenGL Texture object
-    GLCHK(glBindTexture(GL_TEXTURE_2D, fb_tex_name));  // Make it active
-
+    GLCHK(glGenTextures(1, &fb_tex_name));              // Create a new OpenGL Texture object
+    GLCHK(glBindTexture(GL_TEXTURE_2D, fb_tex_name));   // Make it active
     GLCHK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
     GLCHK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
 
-    printf("Using VCSM\n");
+    fb_width = raspitex_state->width / 4;   // rwm
+    fb_height = raspitex_state->height;
+    
     vcsm_info.width = fb_width;
     vcsm_info.height = fb_height;
 
@@ -274,7 +291,6 @@ static int vcsm_square_init(RASPITEX_STATE *raspitex_state)
         vcos_log_error("%s: Failed to create EGL VCSM image\n", VCOS_FUNCTION);  return -1;
     }
     GLCHK(glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, eglFbImage));
-
     GLCHK(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fb_tex_name, 0));
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
         vcos_log_error("GL_FRAMEBUFFER is not complete\n");	return -1;
@@ -287,11 +303,9 @@ static int vcsm_square_init(RASPITEX_STATE *raspitex_state)
 
     // --------- LINE VBO stuff -----------
     init_vcsm_rectangle();
-
     GLCHK(glClearColor(0.1f, 0.1f, 0.1f, 0.5));
 
     //set_glbuff_cb(do_nothing);
-end:
     return rc;
 }
 
@@ -299,14 +313,9 @@ static int vcsm_square_redraw(RASPITEX_STATE *raspitex_state)
 {
     unsigned char *vcsm_buffer = NULL;
     VCSM_CACHE_TYPE_T cache_type;
-
     vcos_log_trace("%s", VCOS_FUNCTION);
-
-    //glClearColor(255, 0, 0, 255);
-    // Clear screen frame buffer which is currently bound 
-
-    // ------ Fill the viewport with the camera image
-    // --------------  Bind our Virtual FBO and clear it out
+    //glClearColor(255, 0, 0, 255);   Clear screen frame buffer which is currently bound 
+    // --------------  Bind our Virtual FBO and clear it out.  Fill the viewport with the camera image
     GLCHK(glBindFramebuffer(GL_FRAMEBUFFER, fb_name));
     GLCHK(glViewport(0, 0, fb_width, fb_height));
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -323,7 +332,7 @@ static int vcsm_square_redraw(RASPITEX_STATE *raspitex_state)
     vcsm_buffer = (unsigned char *) vcsm_lock_cache(vcsm_info.vcsm_handle, VCSM_CACHE_TYPE_HOST, &cache_type);
     if (! vcsm_buffer) { vcos_log_error("Failed to lock VCSM buffer for handle %d\n", vcsm_info.vcsm_handle); return -1;}
     vcos_log_trace("Locked vcsm handle %d at %p\n", vcsm_info.vcsm_handle, vcsm_buffer);
-    //vcsm_square_draw_pattern(vcsm_buffer);
+    vcsm_square_draw_pattern(vcsm_buffer);
     publish_buffer(vcsm_buffer);
     vcsm_unlock_ptr(vcsm_buffer); // Release the locked texture memory to flush the CPU cache and allow GPU to read it
 
@@ -341,16 +350,13 @@ static int vcsm_square_redraw(RASPITEX_STATE *raspitex_state)
     for(int x =0; x < square_idx; x++) {
         draw_vcsm_rectangle(x);
     }
-
     GLCHK(glUseProgram(0));
-
     return 0;
 }
 
 int vcsm_square_open(RASPITEX_STATE *raspitex_state)
 {
     vcos_log_trace("%s", VCOS_FUNCTION);
-
     raspitex_state->ops.gl_init = vcsm_square_init;
     raspitex_state->ops.redraw = vcsm_square_redraw;
     raspitex_state->ops.update_y_texture = raspitexutil_update_y_texture;

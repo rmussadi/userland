@@ -132,19 +132,12 @@ typedef struct RASPITEX_STATE
    VCOS_THREAD_T preview_thread;       /// Preview worker / GL rendering thread
    uint32_t preview_stop;              /// If zero the worker can continue
 
-   /* Copy of preview window params */
-   int32_t preview_x;                  /// x-offset of preview window
-   int32_t preview_y;                  /// y-offset of preview window
-   int32_t preview_width;              /// preview y-plane width in pixels
-   int32_t preview_height;             /// preview y-plane height in pixels
-
    /* Display rectangle for the native window */
    int32_t x;                          /// x-offset in pixels
    int32_t y;                          /// y-offset in pixels
    int32_t width;                      /// width in pixels
    int32_t height;                     /// height in pixels
    int opacity;                        /// Alpha value for display element
-   int gl_win_defined;                 /// Use rect from --glwin instead of preview
 
    /* DispmanX info. This might be unused if a custom create_native_window
     * does something else. */
@@ -178,7 +171,7 @@ typedef struct RASPITEX_STATE
 
 } RASPITEX_STATE;
 
-int raspitex_init(RASPITEX_STATE *state);
+int raspitex_init(RASPITEX_STATE *state, int32_t x, int32_t y, int32_t width, int32_t height);
 void raspitex_destroy(RASPITEX_STATE *state);
 int raspitex_start(RASPITEX_STATE *state);
 void raspitex_stop(RASPITEX_STATE *state);

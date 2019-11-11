@@ -39,7 +39,15 @@
  */
 int main(int argc, const char **argv)
 {
-    start_video(0,0,1024,1024, 10000);
+    int width = 64;
+    int height = 64;
+
+    if (argc > 1) {
+        width = atoi(argv[1]);
+        height = atoi(argv[2]);
+    }
+    printf("%s: %dx%d\n", __func__, width, height);
+    start_video(0,0,width, height, 10000);
     int rec1 = draw_rect(20, 20, 60, 100);  // must be wrt to current window size
     int rec2 = draw_rect(30, 90, 60, 100);  // must be wrt to current window size
     int rec3 = draw_rect(800, 800, 160, 200);  // must be wrt to current window size

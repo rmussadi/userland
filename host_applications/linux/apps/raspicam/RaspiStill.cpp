@@ -34,15 +34,15 @@
 #include "interface/mmal/mmal.h"
 #include "interface/mmal/mmal_logging.h"
 #include "interface/mmal/mmal_buffer.h"
-#include "interface/mmal/util/mmal_util.h"
+//#include "interface/mmal/util/mmal_util.h"
 #include "interface/mmal/util/mmal_util_params.h"
 #include "interface/mmal/util/mmal_default_components.h"
 #include "interface/mmal/util/mmal_connection.h"
 #include "interface/mmal/mmal_parameters_camera.h"
 
 #include "RaspiStill.h"
-#include "RaspiCommonSettings.h"
-#include "RaspiPreview.h"
+//#include "RaspiCommonSettings.h"
+//#include "RaspiPreview.h"
 #include "RaspiCamControl.h"
 #include "RaspiTex.h"
 #include "RaspiHelpers.h"
@@ -52,18 +52,61 @@
 #include <pthread.h>
 #include <time.h>
 
+/// Video render needs at least 2 buffers.
+#define VIDEO_OUTPUT_BUFFERS_NUM 3
+
 // Standard port setting for the camera component
 #define MMAL_CAMERA_PREVIEW_PORT 0
 #define MMAL_CAMERA_VIDEO_PORT 1
 #define MMAL_CAMERA_CAPTURE_PORT 2
 
-/// Video render needs at least 2 buffers.
-#define VIDEO_OUTPUT_BUFFERS_NUM 3
+// Frames rates of 0 implies variable, but denominator needs to be 1 to prevent div by 0
+#define PREVIEW_FRAME_RATE_NUM 0
+#define PREVIEW_FRAME_RATE_DEN 1
 
-enum
+#define FULL_RES_PREVIEW_FRAME_RATE_NUM 0
+#define FULL_RES_PREVIEW_FRAME_RATE_DEN 1
+
+//#define FULL_FOV_PREVIEW_16x9_X 1280
+//#define FULL_FOV_PREVIEW_16x9_Y 720
+//#define FULL_FOV_PREVIEW_4x3_X 1296
+//#define FULL_FOV_PREVIEW_4x3_Y 972
+//#define FULL_FOV_PREVIEW_FRAME_RATE_NUM 0
+//#define FULL_FOV_PREVIEW_FRAME_RATE_DEN 1
+
+// Copied from RaspiPreview.c
+typedef struct
 {
-   FRAME_NEXT_SINGLE,
-   FRAME_NEXT_FOREVER,
+    MMAL_RECT_T previewWindow;             /// Destination rectangle for the preview window.
+} RASPIPREVIEW_PARAMETERS;
+
+static void raspipreview_set_defaults(RASPIPREVIEW_PARAMETERS *state)
+{
+   state->previewWindow.x = 0;
+   state->previewWindow.y = 0;
+   state->previewWindow.width = 1024;
+   state->previewWindow.height = 1024;
+}
+
+// copied from RaspiCommonSettings.c
+typedef struct
+{
+   char camera_name[MMAL_PARAMETER_CAMERA_INFO_MAX_STR_LEN]; // Name of the camera sensor
+   int width;                          /// Requested width of image
+   int height;                         /// requested height of image
+   int cameraNum;                      /// Camera number
+   int sensor_mode;                    /// Sensor mode. 0=auto. Check docs/forum for modes selected by other values.
+
+} RASPICOMMONSETTINGS_PARAMETERS;
+
+static void raspicommonsettings_set_defaults(RASPICOMMONSETTINGS_PARAMETERS *state)
+{
+   strncpy(state->camera_name, "(Unknown)", MMAL_PARAMETER_CAMERA_INFO_MAX_STR_LEN);
+   // We dont set width and height since these will be specific to the app being built.
+   state->width = 0;
+   state->height = 0;
+   state->cameraNum = 0;
+   state->sensor_mode = 0;
 };
 
 /** Structure containing all state information for the current run */
@@ -72,69 +115,32 @@ typedef struct
    RASPICOMMONSETTINGS_PARAMETERS common_settings;     /// Common settings
    int timeout;                        /// Time taken before frame is grabbed and app then shuts down. Units are milliseconds
    int fullResPreview;                 /// If set, the camera preview port runs at capture resolution. Reduces fps.
-   int frameNextMethod;                /// Which method to use to advance to next frame
 
    RASPIPREVIEW_PARAMETERS preview_parameters;    /// Preview setup parameters
    RASPICAM_CAMERA_PARAMETERS camera_parameters; /// Camera setup parameters
    MMAL_COMPONENT_T *camera_component;    /// Pointer to the camera component
    RASPITEX_STATE raspitex_state; /// GL renderer state and parameters
-
 } RASPISTILL_STATE;
-
-
-// Our main data storage vessel..
-RASPISTILL_STATE rstate;
-   
-MMAL_PORT_T *camera_preview_port = NULL;
-MMAL_PORT_T *camera_video_port = NULL;
-
-// Copied from RaspiPreview.c
-void raspipreview_set_defaults(RASPIPREVIEW_PARAMETERS *state)
-{
-   state->wantPreview = 1;
-   state->wantFullScreenPreview = 1;
-   state->opacity = 255;
-   state->previewWindow.x = 0;
-   state->previewWindow.y = 0;
-   state->previewWindow.width = 1024;
-   state->previewWindow.height = 768;
-   state->preview_component = NULL;
-}
-
-// copied from RaspiCommonSettings.c
-void raspicommonsettings_set_defaults(RASPICOMMONSETTINGS_PARAMETERS *state)
-{
-   strncpy(state->camera_name, "(Unknown)", MMAL_PARAMETER_CAMERA_INFO_MAX_STR_LEN);
-   // We dont set width and height since these will be specific to the app being built.
-   state->width = 0;
-   state->height = 0;
-   state->filename = NULL;
-   state->verbose = 0;
-   state->cameraNum = 0;
-   state->sensor_mode = 0;
-   state->gps = 0;
-};
 
 // -
 static void default_status(RASPISTILL_STATE *state)
 {
    memset(state, 0, sizeof(*state));
-
-   raspicommonsettings_set_defaults(&state->common_settings);
-
    state->timeout = -1; // replaced with 5000ms later if unset
    state->camera_component = NULL;
    state->fullResPreview = 0;
-   state->frameNextMethod = FRAME_NEXT_SINGLE;
-
-   // Setup preview window defaults
-   raspipreview_set_defaults(&state->preview_parameters);
-   // Set up the camera_parameters to default
-   raspicamcontrol_set_defaults(&state->camera_parameters);
-   // Set initial GL preview state
-   raspitex_set_defaults(&state->raspitex_state);
+   raspicommonsettings_set_defaults(&state->common_settings);
+   raspipreview_set_defaults(&state->preview_parameters);    // Setup preview window defaults
+   raspicamcontrol_set_defaults(&state->camera_parameters); // Set up the camera_parameters to default
+   raspitex_set_defaults(&state->raspitex_state); // Set initial GL preview state
 }
 
+// Our main data storage vessel..
+RASPISTILL_STATE rstate;
+
+MMAL_PORT_T *camera_preview_port = NULL;
+MMAL_PORT_T *camera_video_port = NULL;
+   
 // -
 static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
 {
@@ -145,18 +151,15 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
 
    /* Create the component */
    status = mmal_component_create(MMAL_COMPONENT_DEFAULT_CAMERA, &camera);
-   //assert(status == MMAL_SUCCESS);
    raspicamcontrol_set_stereo_mode(camera->output[0], &state->camera_parameters.stereo_mode);
    raspicamcontrol_set_stereo_mode(camera->output[1], &state->camera_parameters.stereo_mode);
    raspicamcontrol_set_stereo_mode(camera->output[2], &state->camera_parameters.stereo_mode);
-   //assert (status == MMAL_SUCCESS);
 
    MMAL_PARAMETER_INT32_T camera_num =
      {{MMAL_PARAMETER_CAMERA_NUM, sizeof(camera_num)}, state->common_settings.cameraNum};
 
    status = mmal_port_parameter_set(camera->control, &camera_num.hdr);
    assert (status == MMAL_SUCCESS);  // vcos_log_error("Could not select camera : error %d", status);
-
    assert (camera->output_num); //vcos_log_error("Camera doesn't have output ports");
    status = mmal_port_parameter_set_uint32(camera->control, MMAL_PARAMETER_CAMERA_CUSTOM_SENSOR_CONFIG, state->common_settings.sensor_mode);
    assert (status == MMAL_SUCCESS);//      vcos_log_error("Could not set sensor mode : error %d", status);
@@ -168,9 +171,7 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
    // Enable the camera, and tell it its control callback function
    status = mmal_port_enable(camera->control, default_camera_control_callback);
    assert (status == MMAL_SUCCESS); //      vcos_log_error("Unable to enable control port : error %d", status);
-
-   //  set up the camera configuration
-   {
+   { //  set up the camera configuration
       MMAL_PARAMETER_CAMERA_CONFIG_T cam_config =
       {
          { MMAL_PARAMETER_CAMERA_CONFIG, sizeof(cam_config) },
@@ -284,7 +285,7 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
    return status;
 }
 
-// Destroy the camera component 
+// Destroy the camera component
 static void destroy_camera_component(RASPISTILL_STATE *state)
 {
    if (state->camera_component)
@@ -297,32 +298,9 @@ static void destroy_camera_component(RASPISTILL_STATE *state)
 // @param [in][out] frame The last frame number, adjusted to next frame number on output
 static int wait_for_next_frame(RASPISTILL_STATE *state, int *frame)
 {
-   static int64_t complete_time = -1;
-   int keep_running = 1;
-
-   int64_t current_time =  get_microseconds64()/1000;
-
-   if (complete_time == -1)
-      complete_time =  current_time + state->timeout;
-
-   if (current_time >= complete_time && state->timeout != 0)
-      keep_running = 0;
-
-   switch (state->frameNextMethod)
-   {
-   case FRAME_NEXT_SINGLE :
-      vcos_sleep(state->timeout);  // simple timeout for a single capture
-      fprintf(stderr, "Sleep done\n");
-      return 0;
-
-   case FRAME_NEXT_FOREVER :
-      *frame+=1;
-      vcos_sleep(10000); // Have a sleep so we don't hog the CPU.
-      return 1;  // Run forever so never indicate end of loop
-   } // end of switch
-
-   // Should have returned by now, but default to timeout
-   return keep_running;
+   vcos_sleep(state->timeout);  // simple timeout for a single capture
+   fprintf(stderr, "Sleep done\n");
+   return 0;
 }
 
 int rs_teardown()
@@ -356,16 +334,20 @@ static void system_init()
 //-----------------------------------------------------------------
 
 extern "C" {
- typedef int (*callback_type)(float, float, void*);
- extern int callmeback(callback_type t);
- typedef int (*buffer_cb_type)(unsigned char *);
- extern int set_glbuff_cb(buffer_cb_type callback_fn);
+    typedef int (*callback_type)(float, float, void*);
+    extern int callmeback(callback_type t);
+    typedef int (*buffer_cb_type)(unsigned char *);
+    extern int set_glbuff_cb(buffer_cb_type callback_fn);
 }
 
-unsigned char buffer[] = {1,2,3,4,5,6,7,8,9,10};
+#define superw 600
+#define superh 400
+unsigned char abuffer[superw * superh];
+
+
 int callmeback(callback_type t)
 {
-   t(2.0,1.0, buffer);
+   t(2.0,1.0, abuffer);
    return 0;
 }
 
@@ -375,7 +357,6 @@ static void set_timeout(int duration)
    if (rstate.timeout == -1) {
       rstate.timeout = 5000;
    }
-   rstate.frameNextMethod = FRAME_NEXT_SINGLE;
 }
 
 extern int set_rectangle(RASPITEX_STATE *state, int x, int y, int width, int height);
@@ -386,7 +367,7 @@ int draw_rect(int x, int y, int w, int h)  // must be wrt to current window size
     return set_rectangle(&rstate.raspitex_state, x,y,w,h);
 }
 
-// -
+//
 void begin_loop()
 {
     int frame;   
@@ -404,8 +385,7 @@ int start_video(int x, int y, int w, int h, int duration)
     get_sensor_defaults(rstate.common_settings.cameraNum, rstate.common_settings.camera_name,
 			&rstate.common_settings.width, &rstate.common_settings.height);
     set_timeout(duration);
-    raspitex_set_window(&rstate.raspitex_state, x, y, w, h);
-    raspitex_init(&rstate.raspitex_state);
+    raspitex_init(&rstate.raspitex_state, x, y, w, h);
     assert (create_camera_component(&rstate) == MMAL_SUCCESS);
     camera_video_port   = rstate.camera_component->output[MMAL_CAMERA_VIDEO_PORT];
     assert(raspitex_start(&rstate.raspitex_state) == 0);

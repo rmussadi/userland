@@ -6,42 +6,30 @@ import numpy as np
 from PIL import Image
 import cv2
 
+np.set_printoptions(threshold=sys.maxsize)
+
 width = 1024
 height = 1024
 channels = 1
 frame_buffer_size = width * height * channels
 
-def greater_than(a,b, data):
-    npa = np.frombuffer(ct.cast(data, ct.POINTER(ct.c_uint8 * 10)).contents, dtype=np.uint8, count=10).reshape((5,2))
-    if a > b:
-        print a,b, 'greater'
-        print npa *5
-    else:
-        print b,a, 'lesser'
-        print npa
-
-    npa[1,1] = 22
-    print npa
-    #npa[10,1] = 44
-    return 1
-
 x=1
 
 def joe_gots_a_frame(data):
-    npa = np.frombuffer(ct.cast(data, ct.POINTER(ct.c_uint8 * frame_buffer_size)).contents, dtype=np.uint8, count=frame_buffer_size).reshape((width,height))
+    npa = np.frombuffer(ct.cast(data, ct.POINTER(ct.c_uint8 * frame_buffer_size)).contents, dtype=np.uint8, count=frame_buffer_size).reshape(height,width)
     global x
-    print "frame", x
+    if x % 60 == 0:
+        print "frame", x
+        img = Image.fromarray(np.uint8(npa) , 'L')
+        fn = 'myt' + str(x) + '.png'
+        img.save(fn)
+        print npa
+        print '----'
     x = x+1
     return x
     
 _stilllib = ct.CDLL('libtq84.so')
 
-
-callback_type = ct.CFUNCTYPE(ct.c_int, ct.c_float, ct.c_float, ct.POINTER(ct.c_byte))
-callback_func = callback_type(greater_than)
-_stilllib.callmeback.argtype = (callback_type)  # Just so python doesn't have to guess the arg types
-#_stilllib.callmeback.argtypes = _stilllib.callmeback.argtype = (callback_type) # Just so python doesn't have to guess the arg types
-_stilllib.callmeback(callback_func)
 
 # typedef int (*buffer_cb_type)(unsigned char *);
 callback_type = ct.CFUNCTYPE(ct.c_int, ct.POINTER(ct.c_byte))
@@ -49,7 +37,7 @@ callback_func = callback_type(joe_gots_a_frame)
 _stilllib.set_glbuff_cb.argtype = (callback_type)  # Just so python doesn't have to guess the arg types
 _stilllib.set_glbuff_cb(callback_func)
 
-_stilllib.start_video(0,0,1024,1024, 10000)
+_stilllib.start_video(0,0,width,height, 10000)
 _stilllib.set_glbuff_cb(callback_func)
 _stilllib.begin_loop()
 
@@ -64,4 +52,4 @@ def create_pil_image():
 
     # Creates PIL image
     img = Image.fromarray(np.uint8(mat * 255) , 'L')
-    img.save("joe.bmp")
+    img.save("joe.png")
