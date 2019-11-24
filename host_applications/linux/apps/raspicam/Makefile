@@ -2,7 +2,7 @@ CC=g++
 
 PROJECT_SOURCE_DIR=/home/pi/swdev/userland
 
-INCS=-I $(PROJECT_SOURCE_DIR)/host_applications/linux/apps/raspicam -I $(PROJECT_SOURCE_DIR)/host_applications/linux/libs/bcm_host/include -I $(PROJECT_SOURCE_DIR)/host_applications/linux/libs/sm -I./userland/interface/khronos/include/ -I $(PROJECT_SOURCE_DIR)/interface/khronos/include/ -I $(PROJECT_SOURCE_DIR)/ -I $(PROJECT_SOURCE_DIR)/../glm
+INCS=-I $(PROJECT_SOURCE_DIR)/host_applications/linux/apps/raspicam -I $(PROJECT_SOURCE_DIR)/host_applications/linux/libs/bcm_host/include -I $(PROJECT_SOURCE_DIR)/host_applications/linux/libs/sm -I./userland/interface/khronos/include/ -I $(PROJECT_SOURCE_DIR)/interface/khronos/include/ -I $(PROJECT_SOURCE_DIR)/ -I $(PROJECT_SOURCE_DIR)/../glm -I $(PROJECT_SOURCE_DIR)/../../glm
 LIBS=-lvcsm -lmmal_core -lmmal_util -lmmal_vc_client -lvcos -lbcm_host -lbrcmGLESv2 -lbrcmEGL -lm -ldl -L/opt/vc/lib -lpthread -L $(PROJECT_SOURCE_DIR)/build/lib/
 
 CFLAGS=$(INCS) $(LIBS) -g -fpermissive
@@ -16,12 +16,12 @@ CFLAGS=$(INCS) $(LIBS) -g -fpermissive
 #OBJ = $(patsubst %,$(ODIR)/%,$(_OBJ))
 
 cam: libtq84.so main.o
-	g++  -o $@ main.cpp -ltq84 $(CFLAGS) $(INCS) $(LIBS) -L.
+	$(CC)  -o $@ main.cpp -ltq84 $(CFLAGS) $(INCS) $(LIBS) -L.
 
-libtq84.so:
-	g++  $(CFLAGS) -shared gl_scenes/vcsm_square.cpp RaspiCamControl.cpp RaspiCLI.cpp RaspiHelpers.cpp RaspiStill.cpp RaspiTex.cpp RaspiTexUtil.cpp  -o libtq84.so
+libtq84.so: gl_scenes/vcsm_square.o RaspiCamControl.o RaspiCLI.o RaspiHelpers.o RaspiStill.o RaspiTex.o RaspiTexUtil.o
+	$(CC)  $(CFLAGS) -shared gl_scenes/vcsm_square.o RaspiCamControl.o RaspiCLI.o RaspiHelpers.o RaspiStill.o RaspiTex.o RaspiTexUtil.o  -o libtq84.so
 
-$(ODIR)/%.o: %.c $(DEPS)
+%.o: %.cpp $(DEPS)
 	$(CC) -c -o $@ $< $(CFLAGS)
 
 hellomake: $(OBJ)

@@ -74,6 +74,30 @@ static RASPITEXUTIL_SHADER_PROGRAM_T vcsm_square_oes_shader =
     .attribute_names = {"vertex"},
 };
 
+#define DRAW_RGBA_TEXTURE
+
+#ifdef DRAW_RGBA_TEXTURE
+static RASPITEXUTIL_SHADER_PROGRAM_T vcsm_square_shader =
+{
+    .vertex_source =
+    "attribute vec2 vertex;\n"
+    "varying vec2 texcoord;\n"
+    "void main(void) {\n"
+    "   texcoord = 0.5 * (vertex + 1.0);\n" \
+    "   gl_Position = vec4(vertex, 0.0, 1.0);\n"
+    "}\n",
+
+    .fragment_source =
+    "#extension GL_OES_EGL_image_external : require\n"
+    "uniform samplerExternalOES tex;\n"
+    "varying vec2 texcoord;\n"
+    "void main(void) {\n"
+    "    gl_FragColor = texture2D(tex, texcoord);\n"
+    "}\n",
+    .uniform_names = {"tex"},
+    .attribute_names = {"vertex"},
+};
+#else
 static RASPITEXUTIL_SHADER_PROGRAM_T vcsm_square_shader =
 {
     .vertex_source =
@@ -93,7 +117,7 @@ static RASPITEXUTIL_SHADER_PROGRAM_T vcsm_square_shader =
     .uniform_names = {"tex"},
     .attribute_names = {"vertex"},
 };
-
+#endif
 static RASPITEXUTIL_SHADER_PROGRAM_T line_shader =
 {
     .vertex_source =
@@ -243,7 +267,7 @@ unsigned char buffer[superw * superh];
 void publish_buffer(unsigned char *vcsm_buffer)
 {
     if(glbuff_cb == NULL) {
-        vcsm_square_draw_pattern(vcsm_buffer);
+      //vcsm_square_draw_pattern(vcsm_buffer);
     } else {
       glbuff_cb(vcsm_buffer);
       /*
@@ -332,10 +356,24 @@ static int vcsm_square_redraw(RASPITEX_STATE *raspitex_state)
     vcsm_buffer = (unsigned char *) vcsm_lock_cache(vcsm_info.vcsm_handle, VCSM_CACHE_TYPE_HOST, &cache_type);
     if (! vcsm_buffer) { vcos_log_error("Failed to lock VCSM buffer for handle %d\n", vcsm_info.vcsm_handle); return -1;}
     vcos_log_trace("Locked vcsm handle %d at %p\n", vcsm_info.vcsm_handle, vcsm_buffer);
-    vcsm_square_draw_pattern(vcsm_buffer);
+    //vcsm_square_draw_pattern(vcsm_buffer);
     publish_buffer(vcsm_buffer);
     vcsm_unlock_ptr(vcsm_buffer); // Release the locked texture memory to flush the CPU cache and allow GPU to read it
 
+
+#ifdef DRAW_RGBA_TEXTURE
+    GLCHK(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    GLCHK(glBindTexture(GL_TEXTURE_EXTERNAL_OES, raspitex_state->texture));
+    GLCHK(glViewport(raspitex_state->x, raspitex_state->y, raspitex_state->width, raspitex_state->height));
+    GLCHK(glUseProgram(vcsm_square_shader.program));
+    GLCHK(glEnableVertexAttribArray(vcsm_square_shader.attribute_locations[0]));
+    GLCHK(glVertexAttribPointer(vcsm_square_shader.attribute_locations[0], 2, GL_FLOAT, GL_FALSE, 0, 0));
+    GLCHK(glDrawArrays(GL_TRIANGLES, 0, 6));
+    GLCHK(glDisableVertexAttribArray(vcsm_square_shader.attribute_locations[0]));
+    //GLCHK(glVertexAttrib2f(yuv_shader.attribute_locations[1], -1.0f, 0.0f));
+    //GLCHK(glDrawArrays(GL_TRIANGLES, 0, 6));
+#else
     // Draw the modified texture buffer to the screen
     GLCHK(glBindFramebuffer(GL_FRAMEBUFFER, 0));
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -346,7 +384,8 @@ static int vcsm_square_redraw(RASPITEX_STATE *raspitex_state)
     GLCHK(glVertexAttribPointer(vcsm_square_shader.attribute_locations[0], 2, GL_FLOAT, GL_FALSE, 0, 0));
     GLCHK(glDrawArrays(GL_TRIANGLES, 0, 6));
     GLCHK(glDisableVertexAttribArray(vcsm_square_shader.attribute_locations[0]));
-
+#endif
+    
     for(int x =0; x < square_idx; x++) {
         draw_vcsm_rectangle(x);
     }
@@ -360,5 +399,6 @@ int vcsm_square_open(RASPITEX_STATE *raspitex_state)
     raspitex_state->ops.gl_init = vcsm_square_init;
     raspitex_state->ops.redraw = vcsm_square_redraw;
     raspitex_state->ops.update_y_texture = raspitexutil_update_y_texture;
+    raspitex_state->ops.update_texture = raspitexutil_update_texture;
     return 0;
 }

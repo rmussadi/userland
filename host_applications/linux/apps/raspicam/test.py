@@ -23,8 +23,8 @@ def joe_gots_a_frame(data):
         img = Image.fromarray(np.uint8(npa) , 'L')
         fn = 'myt' + str(x) + '.png'
         img.save(fn)
-        print npa
-        print '----'
+        #print npa
+        #print '----'
     x = x+1
     return x
     
